@@ -1,0 +1,10 @@
+*.o
+*.tar.*
+*~
+.emacs.desktop*
+.emacsrc
+.gdbinit
+core
+parsetest
+timetest
+tmp
