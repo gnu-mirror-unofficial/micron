@@ -13,11 +13,17 @@ dnl AC_PROG_RANLIB
 AC_USE_SYSTEM_EXTENSIONS
 # Checks for libraries.
 AC_CHECK_LIB(rt, clock_gettime)
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([sys/inotify.h])
 # Checks for typedefs, structures, and compiler characteristics.
 AC_CHECK_MEMBERS([struct tm.tm_gmtoff],,,
                  [#include <sys/types.h>
 #include <time.h>
 ])
+# Checks for library functions.
+AC_CHECK_FUNCS([inotify_init])
+
 # Check for POSIX threads support
 AX_PTHREAD([],
  [AC_MSG_ERROR([POSIX threads support is required, but not available])])
