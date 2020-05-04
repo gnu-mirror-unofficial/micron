@@ -22,17 +22,17 @@ watcher_setup(int wd[])
     }
     
     for (i = 0; i < NCRONID; i++) {
-	if (crondefs[i].flags & CDF_DISABLED) {
+	if (crongroups[i].flags & CDF_DISABLED) {
 	    wd[i] = -1;
 	    continue;
 	}
 
-	wd[i] = inotify_add_watch(ifd, crondefs[i].dirname,
+	wd[i] = inotify_add_watch(ifd, crongroups[i].dirname,
 				  IN_DELETE | IN_CREATE | IN_CLOSE_WRITE |
 				  IN_MOVED_FROM | IN_MOVED_TO);
 	if (wd[i] == -1) {
 	    micron_log(LOG_ERR, "cannot set watch on %s: %s",
-		       crondefs[i].dirname,
+		       crongroups[i].dirname,
 		       strerror(errno));
 	    close(ifd);
 	    ifd = -1;
@@ -64,15 +64,15 @@ event_handler(struct inotify_event *ep, int wd[])
 	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
     } else if (ep->mask & IN_CREATE) {
 	micron_log(LOG_DEBUG, "%s/%s created",
-		   crondefs[cid].dirname, ep->name);
+		   crongroups[cid].dirname, ep->name);
     } else if (ep->mask & (IN_DELETE | IN_MOVED_FROM)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", 
-		   crondefs[cid].dirname, ep->name,
+		   crongroups[cid].dirname, ep->name,
 		   ep->mask & IN_DELETE ? "deleted" : "moved out");
 	crontab_deleted(cid, ep->name);
     } else if (ep->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", 
-		   crondefs[cid].dirname, ep->name,
+		   crongroups[cid].dirname, ep->name,
 		   ep->mask & IN_MOVED_TO ? "moved to" : "written");
 	crontab_updated(cid, ep->name);
     } else {

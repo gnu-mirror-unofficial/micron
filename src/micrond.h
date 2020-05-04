@@ -5,15 +5,36 @@
 #define MAXCRONTABLINE 1024
 
 struct micron_entry {
-    struct micronent schedule;   /* Time schedule entry */
-    char *command;               /* Command to be run */
+    struct micronent schedule; /* Time schedule entry */
+    char *command;             /* Command to be run */
     uid_t uid;
     gid_t gid;
-    struct timespec next_time;   /* Next time this entry is to be run */
-    struct list_head list;       /* Link to the next and prev elements */
-    int fileid;                  /* Crontab identifier */
-    int internal;                /* True if this is internal entry */
+    struct micron_environ *env;
+    struct timespec next_time; /* Next time this entry is to be run */
+    struct list_head list;     /* Links to the next and prev crontab entries */
+    struct list_head runq;     /* Links to the next and prev runqueue entries */
+    int fileid;                /* Crontab identifier */
+    int internal;              /* True if this is internal entry */
+    unsigned refcnt;           /* Number of times this entry is referenced */
 };
+
+static inline void
+micron_entry_ref(struct micron_entry *cp)
+{
+    cp->refcnt++;
+}
+
+static inline struct micron_entry *
+micron_entry_unref(struct micron_entry *cp)
+{
+    if (--cp->refcnt == 0) {
+	LIST_REMOVE(cp, list);
+	LIST_REMOVE(cp, runq);
+	free(cp);
+	cp = NULL;
+    }
+    return cp;
+}
 
 static inline int
 timespec_cmp(struct timespec const *a, struct timespec const *b)
@@ -42,7 +63,7 @@ enum {
 #define CDF_SINGLE   0x1
 #define CDF_DISABLED 0x2
 
-struct crondef {
+struct crongroup {
     char *dirname;
     int dirfd;
     char *pattern;
@@ -50,10 +71,22 @@ struct crondef {
     int flags;
 };
 
-extern struct crondef crondefs[];
+extern struct crongroup crongroups[];
 
 void crontab_deleted(int cid, char const *name);
 void crontab_updated(int cid, char const *name);
 void *cron_thr_watcher(void *ptr);
 
 void crontab_scanner_schedule(void);
+
+void *cron_thr_runner(void *ptr);
+void *cron_thr_cleaner(void *ptr);
+
+void runner_enqueue(struct micron_entry *entry);
+
+int parsefilename(char const *filename, char **dirname, char **basename);
+void *memrealloc(void *p, size_t *pn, size_t s);
+
+char **micron_entry_env(struct micron_entry *ent);
+void env_free(char **env);
+char const *env_get(char *name, char **env);

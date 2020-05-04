@@ -72,23 +72,39 @@ list_head_insert_before(struct list_head *a, struct list_head *b)
 #define LIST_HEAD_PUSH(head,entry,member)	\
     LIST_HEAD_INSERT_FIRST(head,entry,member);
 
-#define LIST_FOREACH(var,head,member)					\
-    for (var = LIST_FIRST_ENTRY(head,var,member);			\
+#define LIST_HEAD_ENQUEUE(head,var,member)	\
+    LIST_HEAD_INSERT_LAST(head,var,member)
+#define LIST_HEAD_DEQUEUE(head,var,member)	\
+    LIST_HEAD_POP(head,var,member)
+
+#define LIST_FOREACH_FROM(var,from,head,member)				\
+    for (var = from;							\
          &(var)->member != (head);					\
 	 var = list_container((var)->member.next,var,member))
-#define LIST_FOREACH_SAFE(var,tmp,head,member)				\
-    for (var = LIST_FIRST_ENTRY(head,var,member),\
+#define LIST_FOREACH(var,head,member)					\
+    LIST_FOREACH_FROM(var,LIST_FIRST_ENTRY(head,var,member),head,member)
+#define LIST_FOREACH_FROM_SAFE(var,from,tmp,head,member)	        \
+    for (var = from,							\
 	     tmp = list_container((var)->member.next,tmp,member);	\
          &(var)->member != (head);					\
 	 var = tmp,							\
 	     tmp = list_container((var)->member.next,tmp,member))
-#define LIST_FOREACH_REVERSE(var,head,member)				\
-    for (var = LIST_LAST_ENTRY(head,var,member);			\
+#define LIST_FOREACH_SAFE(var,tmp,head,member)				\
+    LIST_FOREACH_FROM_SAFE(var,LIST_FIRST_ENTRY(head,var,member),tmp,head,member)    
+
+#define LIST_FOREACH_FROM_REVERSE(var,from,head,member)			\
+    for (var = from;							\
          &(var)->member != (head);					\
 	 var = list_container((var)->member.prev,var,member))
-#define LIST_FOREACH_REVERSE_SAFE(var,tmp,head,member)			\
-    for (var = LIST_LAST_ENTRY(head,var,member),			\
+#define LIST_FOREACH_REVERSE(var,head,member)				\
+    LIST_FOREACH_FROM_REVERSE(var,LIST_LAST_ENTRY(head,var,member),head,member)
+
+#define LIST_FOREACH_FROM_REVERSE_SAFE(var,from,tmp,head,member)	\
+    for (var = from,							\
 	     tmp = list_container((var)->member.prev,tmp,member);	\
          &(var)->member != (head);					\
 	 var = tmp,							\
 	     tmp = list_container((var)->member.prev,tmp,member))
+#define LIST_FOREACH_REVERSE_SAFE(var,tmp,head,member)			\
+    LIST_FOREACH_FROM_REVERSE_SAFE(var,LIST_LAST_ENTRY(head,var,member),\
+				   tmp,head,member)
