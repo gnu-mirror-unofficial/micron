@@ -283,34 +283,6 @@ parsefilename(char const *filename, char **dirname, char **basename)
     return 0;
 }
 
-struct micron_environ {
-    size_t varc;     /* Number of variable settings in this environment */
-    size_t varmax;   /* Max. count of variables */
-    char **varv;     /* Variable settings */
-    struct list_head link; /* Links to another envs */
-};
-
-#define MICRON_ENVIRON_INITIALIZER(n) \
-    { 0, 0, NULL, LIST_HEAD_INITIALIZER(n.link) }
-
-static void
-micron_environ_init(struct micron_environ *ebuf)
-{
-    ebuf->varc = ebuf->varmax = 0;
-    ebuf->varv = NULL;
-    list_head_init(&ebuf->link);
-}
-
-static struct micron_environ *
-micron_environ_alloc(struct list_head *head)
-{
-    struct micron_environ *ebuf = malloc(sizeof(*ebuf));
-    if (ebuf)
-	micron_environ_init(ebuf);
-    LIST_HEAD_PUSH(head, ebuf, link);
-    return ebuf;
-}
-
 char const *
 env_get(char *name, char **env)
 {
@@ -334,6 +306,45 @@ env_free(char **env)
 	free(env[i]);
     free(env);
 }
+
+/*
+ * Incremental environments.
+ *
+ * An incremental environment structure modifies a basic environment
+ * (its parent) avoiding unnecessary memory bloat. Another incremental
+ * environment object can use it as its parent, and so on.
+ *
+ * When necessary, incremental environment can be flattened to a simple
+ * environment array.
+ */
+
+struct micron_environ {
+    size_t varc;     /* Number of variable settings in this environment */
+    size_t varmax;   /* Max. count of variables */
+    char **varv;     /* Variable settings */
+    struct list_head link; /* Links to parent and child environments */
+};
+
+#define MICRON_ENVIRON_INITIALIZER(n) \
+    { 0, 0, NULL, LIST_HEAD_INITIALIZER(n.link) }
+
+static void
+micron_environ_init(struct micron_environ *ebuf)
+{
+    ebuf->varc = ebuf->varmax = 0;
+    ebuf->varv = NULL;
+    list_head_init(&ebuf->link);
+}
+
+static struct micron_environ *
+micron_environ_alloc(struct list_head *head)
+{
+    struct micron_environ *ebuf = malloc(sizeof(*ebuf));
+    if (ebuf)
+	micron_environ_init(ebuf);
+    LIST_HEAD_PUSH(head, ebuf, link);
+    return ebuf;
+}
 
 static void
 micron_environ_free(struct micron_environ *ebuf)
@@ -341,7 +352,12 @@ micron_environ_free(struct micron_environ *ebuf)
     env_free(ebuf->varv);
     free(ebuf);
 }    
-    
+
+/*
+ * Find a variable NAME in environment EBUF (non-recursive).
+ * On success, store the pointer to its definition in *ret and return 0.
+ * Otherwise, return -1.
+ */
 static int
 micron_environ_find(struct micron_environ *ebuf, char const *name, char ***ret)
 {
@@ -359,6 +375,10 @@ micron_environ_find(struct micron_environ *ebuf, char const *name, char ***ret)
     return -1;
 }
 
+/*
+ * Append variable definition VAR to the environment EBUF.
+ * Return 0 on success, -1 on failure (not enough memory).
+ */
 static int
 micron_environ_append_var(struct micron_environ *ebuf, char *var)
 {
@@ -375,12 +395,17 @@ micron_environ_append_var(struct micron_environ *ebuf, char *var)
     return 0;
 }
 
+/* Finish the environment by appending a NULL entry to it */
 static int
 micron_environ_finish(struct micron_environ *ebuf)
 {
     return micron_environ_append_var(ebuf, NULL);
 }
 
+/*
+ * Copy plain environment ENV to incremental environment EBUF.
+ * Return 0 on success, -1 on failure (not enough memory).
+ */
 static int
 micron_environ_copy(struct micron_environ *ebuf, char **env)
 {
@@ -405,6 +430,11 @@ micron_environ_copy(struct micron_environ *ebuf, char **env)
     return 0;
 }
 
+/*
+ * Given the incremental environment EBUF and the root of environment
+ * list HEAD, look up the variable NAME in it and all its parents.
+ * Return the value, or NULL if not found.
+ */
 static char const *
 micron_environ_get(struct micron_environ *ebuf, struct list_head *head,
 		   char const *name)
@@ -420,6 +450,9 @@ micron_environ_get(struct micron_environ *ebuf, struct list_head *head,
     return NULL;
 }
 
+/*
+ * Set the variable NAME to VALUE in the environment EBUF.
+ */
 static int
 micron_environ_set(struct micron_environ *ebuf, char const *name,
 		   const char *value)
@@ -438,6 +471,9 @@ micron_environ_set(struct micron_environ *ebuf, char const *name,
     return 0;
 }
 
+/*
+ * Build a plain environment out of incremental one.
+ */
 static char **
 micron_environ_build(struct micron_environ *micron_env, struct list_head *head)
 {
@@ -599,31 +635,31 @@ isws(int c)
     return c == ' ' || c == '\t';
 }
 
-static pthread_key_t strbuf_key;
-static pthread_once_t strbuf_key_once = PTHREAD_ONCE_INIT;
+static pthread_key_t pwdbuf_key;
+static pthread_once_t pwdbuf_key_once = PTHREAD_ONCE_INIT;
 
-struct strbuf {
+struct pwdbuf {
     struct passwd pwd;
     char *buf;
     size_t size;
 };
 
 static void
-strbuf_free(void *f)
+pwdbuf_free(void *f)
 {
-    struct strbuf *sb = f;
+    struct pwdbuf *sb = f;
     free(sb->buf);
     free(sb);
 }
 
 static void
-make_strbuf_key(void)
+make_pwdbuf_key(void)
 {
-    pthread_key_create(&strbuf_key, strbuf_free);
+    pthread_key_create(&pwdbuf_key, pwdbuf_free);
 }
 
-static struct strbuf *
-priv_expand_strbuf(struct strbuf *sb)
+static struct pwdbuf *
+priv_expand_pwdbuf(struct pwdbuf *sb)
 {
     size_t n;
     char *p;
@@ -648,20 +684,20 @@ priv_expand_strbuf(struct strbuf *sb)
     return sb;
 }
 
-static struct strbuf *
-priv_get_strbuf(void)
+static struct pwdbuf *
+priv_get_pwdbuf(void)
 {
-    struct strbuf *sb;
-    pthread_once(&strbuf_key_once, make_strbuf_key);
-    if ((sb = pthread_getspecific(strbuf_key)) == NULL) {
+    struct pwdbuf *sb;
+    pthread_once(&pwdbuf_key_once, make_pwdbuf_key);
+    if ((sb = pthread_getspecific(pwdbuf_key)) == NULL) {
 	sb = malloc(sizeof(*sb));
 	if (sb == NULL)
 	    micron_log(LOG_ERR, "out of memory");
-	else if (priv_expand_strbuf(sb) == NULL) {
+	else if (priv_expand_pwdbuf(sb) == NULL) {
 	    free(sb);
 	    sb = NULL;
 	}
-	pthread_setspecific(strbuf_key, sb);
+	pthread_setspecific(pwdbuf_key, sb);
     }
     return sb;
 }
@@ -670,9 +706,9 @@ static struct passwd *
 priv_get_passwd(char const *username)
 {
     struct passwd *pwd;
-    struct strbuf *sb = priv_get_strbuf();
+    struct pwdbuf *sb = priv_get_pwdbuf();
     while (getpwnam_r(username, &sb->pwd, sb->buf, sb->size, &pwd) == ERANGE) {
-	if (!priv_expand_strbuf(sb))
+	if (!priv_expand_pwdbuf(sb))
 	    return NULL;
     }
     return pwd;
