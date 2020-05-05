@@ -49,6 +49,7 @@ int foreground;
 char *progname;
 int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
+int syslog_enable;
 
 int crongroup_parse(int cid, int ifmod);
 void *cron_thr_main(void *);
@@ -102,7 +103,7 @@ main(int argc, char **argv)
     else
 	progname = argv[0];
     
-    while ((c = getopt(argc, argv, "C:c:fNm:s:")) != EOF) {
+    while ((c = getopt(argc, argv, "C:c:fNm:Ss:")) != EOF) {
 	switch (c) {
 	case 'C':
 	    if (strcmp(optarg, "none") == 0)
@@ -130,6 +131,10 @@ main(int argc, char **argv)
 	    foreground = 1;
 	    break;
 
+	case 'S':
+	    syslog_enable = 1;
+	    break;
+	    
 	case 's':
 	    if (strcmp(optarg, "none") == 0)
 		crongroups[CRONID_SYSTEM].flags |= CDF_DISABLED;
@@ -286,6 +291,35 @@ parsefilename(char const *filename, char **dirname, char **basename)
     *dirname = dir;
     *basename = base;
     return 0;
+}
+
+char *
+catfilename(char const *dir, char const *file)
+{
+    char *buf;
+    size_t dlen = strlen(dir);
+    size_t len;
+
+    while (dlen > 0 && dir[dlen-1] == '/')
+	--dlen;
+
+    while (*file && *file == '/')
+	++file;
+
+    if (dlen == 0) {
+	errno = EINVAL;
+	return NULL;
+    }
+    
+    len = dlen + 1 + strlen(file);
+
+    buf = malloc(len + 1);
+    if (buf) {
+	strcpy(buf, dir);
+	strcat(buf, "/");
+	strcat(buf, file);
+    }
+    return buf;
 }
 
 char const *
@@ -695,7 +729,7 @@ priv_get_pwdbuf(void)
     struct pwdbuf *sb;
     pthread_once(&pwdbuf_key_once, make_pwdbuf_key);
     if ((sb = pthread_getspecific(pwdbuf_key)) == NULL) {
-	sb = malloc(sizeof(*sb));
+	sb = calloc(1, sizeof(*sb));
 	if (sb == NULL)
 	    micron_log(LOG_ERR, "out of memory");
 	else if (priv_expand_pwdbuf(sb) == NULL) {

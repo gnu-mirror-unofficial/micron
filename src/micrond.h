@@ -1,5 +1,6 @@
 #include <time.h>
 #include "micron.h"
+#include "micron_log.h"
 #include "list.h"
 
 #define MAXCRONTABLINE 1024
@@ -73,6 +74,7 @@ struct crongroup {
 
 extern struct crongroup crongroups[];
 extern char *mailer_command;
+extern int syslog_enable;
 
 void crontab_deleted(int cid, char const *name);
 void crontab_updated(int cid, char const *name);
@@ -85,9 +87,12 @@ void *cron_thr_cleaner(void *ptr);
 
 void runner_enqueue(struct micron_entry *entry);
 
+char *catfilename(char const *dir, char const *file);
 int parsefilename(char const *filename, char **dirname, char **basename);
 void *memrealloc(void *p, size_t *pn, size_t s);
 
 char **micron_entry_env(struct micron_entry *ent);
 void env_free(char **env);
 char const *env_get(char *name, char **env);
+
+

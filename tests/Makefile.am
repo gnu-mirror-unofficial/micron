@@ -1,8 +1,6 @@
-noinst_PROGRAMS = parsetest timetest
-LDADD = micron.o
-micron.o: $(top_srcdir)/src/micron.c $(top_srcdir)/src/micron.h
-	$(AM_V_CC)$(COMPILE) -c -o $@ $<
-AM_CPPFLAGS = -I$(top_srcdir)/src
+noinst_PROGRAMS = parsetest timetest logger
+LDADD = ../src/libmicron.a $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
+AM_CPPFLAGS = -I$(top_srcdir)/src $(PTHREAD_CFLAGS)
 check-local: $(noinst_PROGRAMS)
 	@./parsetest
 	@./timetest

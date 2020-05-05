@@ -9,7 +9,7 @@ AM_INIT_AUTOMAKE([1.15 foreign tar-ustar silent-rules])
 AM_SILENT_RULES([yes])
 # Checks for programs.
 AC_PROG_CC
-dnl AC_PROG_RANLIB
+AC_PROG_RANLIB
 AC_USE_SYSTEM_EXTENSIONS
 # Checks for libraries.
 AC_CHECK_LIB(rt, clock_gettime)
