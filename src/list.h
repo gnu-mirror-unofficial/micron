@@ -54,7 +54,7 @@ list_head_insert_before(struct list_head *a, struct list_head *b)
 #define LIST_HEAD_INSERT_FIRST(head,var,member)	\
     list_head_insert_before((head)->next,&(var)->member);
 #define LIST_HEAD_INSERT_LAST(head,var,member)	\
-    list_head_insert_after((head),&(var)->member);
+    list_head_insert_after((head)->prev,&(var)->member);
 
 #define LIST_INSERT_AFTER(anchor,entry,member)	\
     list_head_insert_after(&(anchor)->member,&(entry)->member)

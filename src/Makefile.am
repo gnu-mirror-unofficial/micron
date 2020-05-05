@@ -1,6 +1,7 @@
 sbin_PROGRAMS=micrond
 micrond_SOURCES=\
  micrond.c\
+ micrond.h\
  runner.c\
  micron.c\
  micron.h\
