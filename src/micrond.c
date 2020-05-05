@@ -48,6 +48,7 @@ enum {
 int foreground;
 char *progname;
 int no_safety_checking;
+char *mailer_command = "/usr/sbin/sendmail -oi -t";
 
 int crongroup_parse(int cid, int ifmod);
 void *cron_thr_main(void *);
@@ -101,7 +102,7 @@ main(int argc, char **argv)
     else
 	progname = argv[0];
     
-    while ((c = getopt(argc, argv, "C:c:fNs:")) != EOF) {
+    while ((c = getopt(argc, argv, "C:c:fNm:s:")) != EOF) {
 	switch (c) {
 	case 'C':
 	    if (strcmp(optarg, "none") == 0)
@@ -110,6 +111,10 @@ main(int argc, char **argv)
 		crongroups[CRONID_MASTER].pattern = optarg;
 	    break;
 
+	case 'm':
+	    mailer_command = optarg;
+	    break;
+	    
 	case 'N':
 	    no_safety_checking = 1;
 	    break;
@@ -820,7 +825,7 @@ is_env(char const *s, int *name_end, int *val_start)
 	;
     if (!s[ne])
 	return 0;
-    vs = ne + 1;
+    vs = ne;
     while (s[vs] && isws(s[vs]))
 	vs++;
     if (s[vs] != '=')
@@ -828,8 +833,6 @@ is_env(char const *s, int *name_end, int *val_start)
     vs++;
     while (s[vs] && isws(s[vs]))
 	vs++;
-    if (!s[vs])
-	return 0;
     *name_end = ne;
     *val_start = vs;
     return 1;

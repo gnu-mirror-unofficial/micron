@@ -8,6 +8,7 @@
 #include <grp.h>
 #include <sys/wait.h>
 #include <pthread.h>
+#include <fcntl.h>
 #include "micrond.h"
 
 static pthread_mutex_t runner_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -31,7 +32,13 @@ runner_dequeue(void)
     return LIST_HEAD_DEQUEUE(&runner_queue, entry, runq);
 }
 
+enum {
+    PROCTAB_COMM,
+    PROCTAB_MAIL
+};
+
 struct proctab {
+    int type;
     pid_t pid;
     struct micron_entry *ent;
     char **env;
@@ -148,12 +155,93 @@ runner_start(struct micron_entry *ent)
 
     /* Master */
     pt = proctab_alloc();
+    pt->type = PROCTAB_COMM;
     pt->pid = pid;
     pt->ent = ent;
     pt->env = env;
     pt->file = fp;
     micron_entry_ref(pt->ent);
     pthread_mutex_unlock(&proctab_mutex);
+}
+
+#ifndef MAXHOSTNAMELEN
+# define MAXHOSTNAMELEN 64
+#endif
+
+static int
+mailer_start(struct proctab *pt, const char *mailto)
+{
+    pid_t pid;
+    
+    micron_log(LOG_DEBUG, "command=\"%s\", mailing results to %s",
+	       pt->ent->command, mailto);
+    pid = fork();
+    if (pid == -1) {
+	micron_log(LOG_ERR, "fork: %s", strerror(errno));
+	return -1;
+    }
+    if (pid == 0) {
+	/* Child */
+	int p[2];
+	FILE *out;
+	int i;
+	char hostname[MAXHOSTNAMELEN];
+	char const *mailfrom;
+	
+	gethostname(hostname, MAXHOSTNAMELEN);
+	
+	if (pipe(p)) {
+	    micron_log(LOG_ERR, "pipe: %s", strerror(errno));
+	    _exit(127);
+	}
+
+	pid = fork();
+
+	if (pid == -1) {
+	    micron_log(LOG_ERR, "child fork: %s", strerror(errno));
+	    _exit(127);
+	}
+
+	if (pid == 0) {
+	    /* Grand-child */
+	    dup2(p[0], 0);
+	    for (i = sysconf(_SC_OPEN_MAX); i > 0; i--) {
+		close(i);
+	    }
+	    open("/dev/null", O_WRONLY);
+	    dup(1);
+	    execlp("/bin/sh", "sh", "-c", mailer_command, NULL);
+	    _exit(127);
+	}
+
+	/* Child again */
+	close(p[0]);
+	out = fdopen(p[1], "w");
+
+	signal(SIGALRM, SIG_DFL);
+	alarm(10);
+	
+	mailfrom = env_get("LOGNAME", pt->env);
+	fprintf(out, "From: \"(Cron daemon)\" <%s@%s>\n",
+		mailfrom, hostname);
+	fprintf(out, "To: %s\n", mailto);
+	fprintf(out, "Subject: Cron <%s@%s> %s\n",
+		mailfrom, hostname, pt->ent->command);
+	for (i = 0; pt->env[i]; i++) {
+	    fprintf(out, "X-Cron-Env: %s\n", pt->env[i]);
+	}
+	fprintf(out, "\n");
+
+	fseek(pt->file, 0, SEEK_SET);
+	while ((i = fgetc(pt->file)) != EOF)
+	    fputc(i, out);
+	fclose(out);
+	_exit(0);
+    }
+    /* Master */
+    pt->type = PROCTAB_MAIL;
+    pt->pid = pid;
+    return 0;
 }
 
 void *
@@ -198,17 +286,35 @@ cron_thr_cleaner(void *ptr)
 	    continue;
 	}
 
-	if (WIFEXITED(status)) {
-	    int code = WEXITSTATUS(status);
-	    micron_log(LOG_DEBUG, "exit=%d, command=\"%s\"",
-		       code, pt->ent->command);
-	} else if (WIFSIGNALED(status)) {
-	    micron_log(LOG_DEBUG, "signal=%d, command=\"%s\"",
-		       WTERMSIG(status), pt->ent->command);
-	} else
-	    micron_log(LOG_DEBUG, "status=%d, command=\"%s\"",
-		       status, pt->ent->command);
+	if (pt->type == PROCTAB_COMM) {
+	    char const *p;
+	    
+	    if (WIFEXITED(status)) {
+		int code = WEXITSTATUS(status);
+		micron_log(LOG_DEBUG, "exit=%d, command=\"%s\"",
+			   code, pt->ent->command);
+	    } else if (WIFSIGNALED(status)) {
+		micron_log(LOG_DEBUG, "signal=%d, command=\"%s\"",
+			   WTERMSIG(status), pt->ent->command);
+	    } else
+		micron_log(LOG_DEBUG, "status=%d, command=\"%s\"",
+			   status, pt->ent->command);
 
+	    /* See whether the results should be mailed to anybody */
+	    p = env_get("MAILTO", pt->env);
+	    if (!p)
+		p = env_get("LOGNAME", pt->env);
+	    if (*p != 0) {
+		/* See if we have any output at all */
+		off_t off = lseek(fileno(pt->file), 0, SEEK_END);
+		if (off == -1) {
+		    micron_log(LOG_ERR, "can't seek in temp file: %s",
+			       strerror(errno));
+		} else if (off > 0 && mailer_start(pt, p))
+		    continue;
+	    }
+	}
+	
 	pthread_mutex_lock(&proctab_mutex);
 	LIST_REMOVE(pt, link);
 	pthread_mutex_unlock(&proctab_mutex);

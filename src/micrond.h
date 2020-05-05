@@ -72,6 +72,7 @@ struct crongroup {
 };
 
 extern struct crongroup crongroups[];
+extern char *mailer_command;
 
 void crontab_deleted(int cid, char const *name);
 void crontab_updated(int cid, char const *name);
