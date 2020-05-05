@@ -55,7 +55,8 @@ dnl AC_CONFIG_TESTDIR(tests)
 dnl AC_CONFIG_FILES([tests/Makefile tests/atlocal tests/etc/Makefile])
 dnl AM_MISSING_PROG([AUTOM4TE], [autom4te])
 AC_CONFIG_FILES([Makefile
-		 src/Makefile])
+		 src/Makefile
+		 tests/Makefile])
 AC_OUTPUT
 		 
 
