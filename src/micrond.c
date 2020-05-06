@@ -25,9 +25,10 @@ static char const *backup_file_table[] = {
 };
 
 struct crongroup crongroups[] = {
-    { NULL, -1, "/etc/crontab", NULL, CDF_SINGLE },
-    { "/etc/cron.d", -1, NULL, backup_file_table, CDF_DEFAULT },
-    { "/var/spool/cron/crontabs", -1, NULL, backup_file_table, CDF_DEFAULT }
+    { "master", NULL, -1, "/etc/crontab", NULL, CDF_SINGLE },
+    { "system", "/etc/cron.d", -1, NULL, backup_file_table, CDF_DEFAULT },
+    { "user", "/var/spool/cron/crontabs", -1, NULL, backup_file_table,
+      CDF_DEFAULT }
 };
 
 /* Mode argument for crontab parsing founctions */
@@ -66,7 +67,7 @@ stderr_log(int prio, char const *fmt, ...)
     fflush(stderr);
 }
 
-void (*micron_log)(int prio, char const *, ...) = syslog;
+void (*micron_log)(int prio, char const *, ...) = stderr_log;
 
 int fatal_signals[] = {
     SIGHUP,
@@ -88,6 +89,55 @@ nomem_exit(void)
     exit(1);
 }
 
+static void
+crongroup_option(char const *arg)
+{
+    int neg = 0;
+    size_t len = strcspn(arg, "=");
+    int i;
+    
+    if (strncmp(arg, "no", 2) == 0) {
+	if (arg[len]) {
+	    micron_log(LOG_CRIT, "%s: assignment and negation used together",
+		       arg);
+	    exit(1);
+	}
+	arg += 2;
+	len -= 2;
+	neg = 1;
+    } else if (arg[len] == 0) {
+	micron_log(LOG_CRIT, "%s: expected ID=NAME", arg);
+	exit(1);
+    }
+
+    for (i = 0; i < NCRONID; i++) {
+	if (strncmp(crongroups[i].id, arg, len) == 0) {
+	    if (neg)
+		crongroups[i].flags |= CDF_DISABLED;
+	    else {
+		char *filename = (char *) (arg + len + 1);
+		struct stat st;
+
+		if (stat(filename, &st)) {
+		    micron_log(LOG_CRIT, "%s: can't stat %s: %s",
+			       arg, filename);
+		    exit(1);
+		}
+		if (S_ISDIR(st.st_mode)) {
+		    crongroups[i].dirname = filename;
+		    if (i == CRONID_MASTER)
+			crongroups[i].pattern = "crontab";
+		} else
+		    crongroups[i].pattern = filename;
+	    }
+	    return;
+	}
+    }
+
+    micron_log(LOG_CRIT, "%s: unknown group name", arg);
+    exit(1);
+}   
+
 int
 main(int argc, char **argv)
 {
@@ -103,13 +153,10 @@ main(int argc, char **argv)
     else
 	progname = argv[0];
     
-    while ((c = getopt(argc, argv, "C:c:fNm:Ss:")) != EOF) {
+    while ((c = getopt(argc, argv, "g:fNm:p:s")) != EOF) {
 	switch (c) {
-	case 'C':
-	    if (strcmp(optarg, "none") == 0)
-		crongroups[CRONID_MASTER].flags |= CDF_DISABLED;
-	    else
-		crongroups[CRONID_MASTER].pattern = optarg;
+	case 'g':
+	    crongroup_option(optarg);
 	    break;
 
 	case 'm':
@@ -120,28 +167,18 @@ main(int argc, char **argv)
 	    no_safety_checking = 1;
 	    break;
 	    
-	case 'c':
-	    if (strcmp(optarg, "none") == 0)
-		crongroups[CRONID_USER].flags |= CDF_DISABLED;
-	    else
-		crongroups[CRONID_USER].dirname = optarg;
-	    break;
-
 	case 'f':
 	    foreground = 1;
 	    break;
 
-	case 'S':
-	    syslog_enable = 1;
+	case 'p':
+	    micron_log_dev = optarg;
 	    break;
 	    
 	case 's':
-	    if (strcmp(optarg, "none") == 0)
-		crongroups[CRONID_SYSTEM].flags |= CDF_DISABLED;
-	    else
-		crongroups[CRONID_SYSTEM].dirname = optarg;
+	    syslog_enable = 1;
 	    break;
-
+	    
 	default:
 	    exit(1);
 	}
@@ -160,15 +197,14 @@ main(int argc, char **argv)
 		crongroups[i].flags |= CDF_DISABLED;
 	}
     }
-    
-    if (foreground)
-	micron_log = stderr_log;
-    else {
-	openlog(progname, LOG_PID, LOG_CRON);
+
+    if (!foreground) {
 	if (daemon(0, 0)) {
 	    micron_log(LOG_CRIT, "daemon failed: %s", strerror(errno));
 	    exit(1);
 	}
+	micron_log_open(progname, LOG_CRON);
+	micron_log = micron_syslog;
     }
 
     umask(077);
@@ -206,8 +242,6 @@ main(int argc, char **argv)
 #else
     crontab_scanner_schedule();
 #endif
-
-    //...
 
     /* Unblock only the fatal signals */
     sigemptyset(&sigs);

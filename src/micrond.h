@@ -65,6 +65,7 @@ enum {
 #define CDF_DISABLED 0x2
 
 struct crongroup {
+    char const *id;
     char *dirname;
     int dirfd;
     char *pattern;
