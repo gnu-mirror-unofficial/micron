@@ -86,7 +86,7 @@ static void
 nomem_exit(void)
 {
     micron_log(LOG_ERR, "out of memory");
-    exit(1);
+    exit(EXIT_FATAL);
 }
 
 static void
@@ -100,14 +100,14 @@ crongroup_option(char const *arg)
 	if (arg[len]) {
 	    micron_log(LOG_CRIT, "%s: assignment and negation used together",
 		       arg);
-	    exit(1);
+	    exit(EXIT_USAGE);
 	}
 	arg += 2;
 	len -= 2;
 	neg = 1;
     } else if (arg[len] == 0) {
 	micron_log(LOG_CRIT, "%s: expected ID=NAME", arg);
-	exit(1);
+	exit(EXIT_USAGE);
     }
 
     for (i = 0; i < NCRONID; i++) {
@@ -121,7 +121,7 @@ crongroup_option(char const *arg)
 		if (stat(filename, &st)) {
 		    micron_log(LOG_CRIT, "%s: can't stat %s: %s",
 			       arg, filename);
-		    exit(1);
+		    exit(EXIT_FATAL);
 		}
 		if (S_ISDIR(st.st_mode)) {
 		    crongroups[i].dirname = filename;
@@ -135,7 +135,7 @@ crongroup_option(char const *arg)
     }
 
     micron_log(LOG_CRIT, "%s: unknown group name", arg);
-    exit(1);
+    exit(EXIT_USAGE);
 }   
 
 int
@@ -180,7 +180,7 @@ main(int argc, char **argv)
 	    break;
 	    
 	default:
-	    exit(1);
+	    exit(EXIT_USAGE);
 	}
     }
 
@@ -201,7 +201,7 @@ main(int argc, char **argv)
     if (!foreground) {
 	if (daemon(0, 0)) {
 	    micron_log(LOG_CRIT, "daemon failed: %s", strerror(errno));
-	    exit(1);
+	    exit(EXIT_FATAL);
 	}
 	micron_log_open(progname, LOG_CRON);
 	micron_log = micron_syslog;
@@ -255,7 +255,7 @@ main(int argc, char **argv)
     micron_log(LOG_NOTICE, "cron shutting down on signal \"%s\"",
 	       strsignal(i));
 
-    return 0;
+    return EXIT_OK;
 }
 
 void *
@@ -1341,7 +1341,7 @@ cron_thr_main(void *ptr)
 	    micron_log(LOG_CRIT,
 		       "unexpected error from pthread_cond_timedwait: %s",
 		       strerror(errno));
-	    exit(1);
+	    exit(EXIT_FATAL);
 	}
 
 	if (entry != LIST_FIRST_ENTRY(&cron_entries, entry, list)) {

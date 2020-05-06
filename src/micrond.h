@@ -77,6 +77,12 @@ extern struct crongroup crongroups[];
 extern char *mailer_command;
 extern int syslog_enable;
 
+enum {
+    EXIT_OK,
+    EXIT_FATAL,
+    EXIT_USAGE
+};
+
 void crontab_deleted(int cid, char const *name);
 void crontab_updated(int cid, char const *name);
 void *cron_thr_watcher(void *ptr);
