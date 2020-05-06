@@ -51,6 +51,7 @@ char *progname;
 int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
 int syslog_enable;
+int syslog_facility = LOG_CRON;
 
 int crongroup_parse(int cid, int ifmod);
 void *cron_thr_main(void *);
@@ -153,7 +154,7 @@ main(int argc, char **argv)
     else
 	progname = argv[0];
     
-    while ((c = getopt(argc, argv, "g:fNm:p:s")) != EOF) {
+    while ((c = getopt(argc, argv, "g:F:fNm:p:s")) != EOF) {
 	switch (c) {
 	case 'g':
 	    crongroup_option(optarg);
@@ -177,6 +178,14 @@ main(int argc, char **argv)
 	    
 	case 's':
 	    syslog_enable = 1;
+	    break;
+
+	case 'F':
+	    syslog_facility = micron_log_str_to_fac(optarg);
+	    if (syslog_facility == -1) {
+		micron_log(LOG_CRIT, "unknown syslog facility %s", optarg);
+		exit(EXIT_USAGE);
+	    }
 	    break;
 	    
 	default:
@@ -379,6 +388,15 @@ env_free(char **env)
 	free(env[i]);
     free(env);
 }
+
+void
+envc_free(int enc, char **env)
+{
+    size_t i;
+    for (i = 0; i < enc; i++)
+	free(env[i]);
+    free(env);
+}
 
 /*
  * Incremental environments.
@@ -401,6 +419,9 @@ struct micron_environ {
 #define MICRON_ENVIRON_INITIALIZER(n) \
     { 0, 0, NULL, LIST_HEAD_INITIALIZER(n.link) }
 
+static int micron_environ_set(struct micron_environ **ebuf, char const *name,
+			      const char *value);
+
 static void
 micron_environ_init(struct micron_environ *ebuf)
 {
@@ -422,7 +443,7 @@ micron_environ_alloc(struct list_head *head)
 static void
 micron_environ_free(struct micron_environ *ebuf)
 {
-    env_free(ebuf->varv);
+    envc_free(ebuf->varc, ebuf->varv);
     free(ebuf);
 }    
 
@@ -441,7 +462,8 @@ micron_environ_find(struct micron_environ *ebuf, char const *name, char ***ret)
 	if (strlen(ebuf->varv[i]) > len
 	    && memcmp(ebuf->varv[i], name, len) == 0
 	    && ebuf->varv[i][len] == '=') {
-	    *ret = &ebuf->varv[i];
+	    if (ret)
+		*ret = &ebuf->varv[i];
 	    return 0;
 	}
     }
@@ -468,36 +490,39 @@ micron_environ_append_var(struct micron_environ *ebuf, char *var)
     return 0;
 }
 
-/* Finish the environment by appending a NULL entry to it */
 static int
-micron_environ_finish(struct micron_environ *ebuf)
+micron_environ_set_var(struct micron_environ **ebuf, char *var)
 {
-    return micron_environ_append_var(ebuf, NULL);
+    char **vptr;
+    if (micron_environ_find(*ebuf, var, &vptr) == 0) {
+	*ebuf = micron_environ_alloc((*ebuf)->link.prev);
+    }
+    return micron_environ_append_var(*ebuf, var);
 }
+
+#define SIZE_MAX ((size_t)-1)
 
 /*
  * Copy plain environment ENV to incremental environment EBUF.
  * Return 0 on success, -1 on failure (not enough memory).
  */
 static int
-micron_environ_copy(struct micron_environ *ebuf, char **env)
+micron_environ_copy(struct micron_environ *ebuf, size_t envc, char **env)
 {
     size_t i;
 
-    for (i = 0; env[i]; i++) {
-	char **vptr;
-	char *s;
+    for (i = 0; i < envc; i++) {
+	if (env[i] == NULL)
+	    break;
+	if (micron_environ_find(ebuf, env[i], NULL)) {
+	    char *s;
 
-	if ((s = strdup(env[i])) == NULL)
-	    return -1;
-	if (micron_environ_find(ebuf, env[i], &vptr)) {
+	    if ((s = strdup(env[i])) == NULL)
+		return -1;
 	    if (micron_environ_append_var(ebuf, s)) {
 		free(s);
 		return -1;
 	    }
-	} else {
-	    free(*vptr);
-	    *vptr = s;
 	}
     }
     return 0;
@@ -527,7 +552,7 @@ micron_environ_get(struct micron_environ *ebuf, struct list_head *head,
  * Set the variable NAME to VALUE in the environment EBUF.
  */
 static int
-micron_environ_set(struct micron_environ *ebuf, char const *name,
+micron_environ_set(struct micron_environ **ebuf, char const *name,
 		   const char *value)
 {
     size_t len = strlen(name) + strlen(value) + 1;
@@ -537,7 +562,7 @@ micron_environ_set(struct micron_environ *ebuf, char const *name,
     strcpy(var, name);
     strcat(var, "=");
     strcat(var, value);
-    if (micron_environ_append_var(ebuf, var)) {
+    if (micron_environ_set_var(ebuf, var)) {
 	free(var);
 	return -1;
     }
@@ -554,11 +579,11 @@ micron_environ_build(struct micron_environ *micron_env, struct list_head *head)
     struct micron_environ *p;
     extern char **environ;
 
-    if (micron_environ_copy(&ebuf, environ))
+    if (micron_environ_copy(&ebuf, SIZE_MAX, environ))
 	goto err;
 
     LIST_FOREACH_FROM(p, micron_env, head, link) {
-	if (micron_environ_copy(&ebuf, p->varv))
+	if (micron_environ_copy(&ebuf, p->varc, p->varv))
 	    goto err;
     }
 
@@ -649,7 +674,8 @@ static struct crontab *
 crontab_find(int cid, char const *filename, int alloc)
 {
     struct crontab *cp;
-
+    struct micron_environ *env;
+    
     LIST_FOREACH(cp, &crontabs, list) {
 	if (cp->cid == cid && strcmp(cp->filename, filename) == 0)
 	    return cp;
@@ -666,21 +692,36 @@ crontab_find(int cid, char const *filename, int alloc)
     strcpy(cp->filename, filename);
     cp->mtime = (time_t) -1;
     list_head_init(&cp->env_head);
-    micron_environ_alloc(&cp->env_head);
+    env = micron_environ_alloc(&cp->env_head);
+    if (syslog_enable)
+	// Note: The following call won't update the ebuf value, since
+	// the environment is still empty.
+	micron_environ_set(&env, "SYSLOG",
+			   micron_log_fac_to_str(syslog_facility));    
     LIST_HEAD_PUSH(&crontabs, cp, list);
     
     return cp;
 }
 
 void
-crontab_forget(struct crontab *cp)
+crontab_clear(struct crontab *cp, int reset)
 {
     struct micron_environ *env;
     cron_entries_remove(cp->fileid);
-    LIST_REMOVE(cp, list);
     while ((env = LIST_HEAD_POP(&cp->env_head,env,link)) != NULL) {
+	if (reset && list_head_is_empty(&cp->env_head)) {
+	    LIST_HEAD_PUSH(&cp->env_head,env,link);
+	    break;
+	}
 	micron_environ_free(env);
     }
+}
+
+void
+crontab_forget(struct crontab *cp)
+{
+    crontab_clear(cp, 0);
+    LIST_REMOVE(cp, list);
     free(cp);
 }
 
@@ -936,6 +977,22 @@ copy_unquoted(char *dst, char const *src)
 }
 
 static int
+check_var(char const *def)
+{
+    if (strncmp(def, "SYSLOG=", 7) == 0) {
+	def += 7;
+	if (strcasecmp(def, "off") == 0
+	    || strcasecmp(def, "none") == 0
+	    || strcasecmp(def, "default") == 0
+	    || micron_log_str_to_fac(def) != -1)
+	    return 0;
+	else
+	    return 1;
+    }
+    return 0;
+}
+
+static int
 crontab_parse(int cid, char const *filename, int ifmod)
 {
     int fd;
@@ -969,6 +1026,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
     case CRONTAB_MODIFIED:
 	micron_log(LOG_INFO, "re-reading " PRsCRONTAB,
 		   ARGCRONTAB(cid, filename));
+	crontab_clear(cp, 1);
 	break;
 	
     case CRONTAB_FAILURE:
@@ -979,8 +1037,6 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	return CRONTAB_FAILURE;
     }
 	
-    cron_entries_remove(cp->fileid);
-
     fd = openat(crongroups[cid].dirfd, filename, O_RDONLY);
     if (fd == -1) {
 	micron_log(LOG_ERR, "can't open file " PRsCRONTAB ": %s",
@@ -997,6 +1053,9 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	return CRONTAB_FAILURE;
     }
 
+    /* Create initial environment */
+    micron_environ_alloc(&cp->env_head);
+    
     off = 0;
     while (1) {
 	size_t len;
@@ -1079,17 +1138,24 @@ crontab_parse(int cid, char const *filename, int ifmod)
 		continue;
 	    }
 
-	    env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
-	    if (!env_cont) {
-		micron_environ_finish(env);
-		env = micron_environ_alloc(&cp->env_head);
-	    }
-	    if (micron_environ_append_var(env, var)) {
-		micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
+	    if (check_var(var) == 0) {
+		env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
+		if (!env_cont) {
+		    env = micron_environ_alloc(&cp->env_head);
+		}
+		if (micron_environ_set_var(&env, var)) {
+		    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
+			       ARGCRONTAB(cid, filename), line);
+		    free(var);
+		    break;
+		}
+	    } else {
+		micron_log(LOG_ERR,
+			   PRsCRONTAB ":%u: invalid builtin variable assignment",
 			   ARGCRONTAB(cid, filename), line);
 		free(var);
-		break;
 	    }
+	    
 	    env_cont = 1;
 	    continue;
 	} else
@@ -1138,21 +1204,19 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
 
 	if (!micron_environ_get(env, &cp->env_head, "HOME")) 
-	    micron_environ_set(env, "HOME", pwd->pw_dir);
+	    micron_environ_set(&env, "HOME", pwd->pw_dir);
     
-	if (micron_environ_set(env, "LOGNAME", pwd->pw_name)) {
+	if (micron_environ_set(&env, "LOGNAME", pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cid, filename), line);
 	    break;
 	}
-	if (micron_environ_set(env, "USER", pwd->pw_name)) {
+	if (micron_environ_set(&env, "USER", pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cid, filename), line);
 	    break;
 	}
 	    
-	micron_environ_finish(env);
-	
 	cron_entry = cron_entry_alloc(cp->fileid, &schedule, pwd, p, env);
 	if (!cron_entry) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",

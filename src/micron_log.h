@@ -16,9 +16,12 @@ void micron_log_close(void);
 void micron_vsyslog(int pri, char const *fmt, va_list ap);
 void micron_syslog(int pri, char const *fmt, ...);
 
-
-
 int micron_log_queue_is_empty(void);
 void micron_log_enqueue(int prio, char const *msgtext, char const *tag,
 			pid_t pid);
+
+int micron_log_str_to_fac(char const *str);
+int micron_log_str_to_pri(char const *str);
+char const *micron_log_fac_to_str(int n);
+char const *micron_log_pri_to_str(int n);
 

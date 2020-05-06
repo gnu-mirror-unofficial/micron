@@ -110,7 +110,6 @@ proctab_lookup_safe(pid_t pid)
     pthread_mutex_unlock(&proctab_mutex);
     return pt;
 }
-
 
 extern char **environ;
 
@@ -123,16 +122,25 @@ runner_start(struct micron_entry *ent)
     struct proctab *pt;
     int p[2];
     int pt_syslog = 0;
-
+    char const *ep;
+    
     env = micron_entry_env(ent);
     if (!env) {
 	micron_log(LOG_ERR, "can't create environment");
 	return;
     }
 
-    if (syslog_enable)
-	// FIXME
-	pt_syslog = 1;
+    ep = env_get("SYSLOG", env);
+    if (ep) {
+	if (strcasecmp(ep, "off") == 0 ||
+	    strcasecmp(ep, "none") == 0)
+	    pt_syslog = 0;
+	else if (strcasecmp(ep, "default") == 0)
+	    pt_syslog = syslog_facility;
+	else {
+	    pt_syslog = micron_log_str_to_fac(ep);
+	}
+    }	
     
     if (pt_syslog) {
 	if (pipe(p)) {
@@ -403,6 +411,7 @@ cron_thr_logger(void *arg)
     struct proctab *pt = arg;
     pid_t pid = pt->pid;
     int fd = pt->fd;
+    int fac = pt->syslog;
     size_t len;
     char *tag;
     FILE *fp;
@@ -420,7 +429,7 @@ cron_thr_logger(void *arg)
 	return NULL;
     }
     while (fgets(buf, sizeof buf, fp)) {
-	micron_log_enqueue(LOG_CRON|LOG_INFO, buf, tag, pid);
+	micron_log_enqueue(fac|LOG_INFO, buf, tag, pid);
     }
     free(tag);
     fclose(fp);

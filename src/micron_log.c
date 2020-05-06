@@ -287,6 +287,18 @@ micron_log_queue_is_empty(void)
     return res;
 }    
 
+static inline int
+pri_facility(int pri)
+{
+    return pri & ~0x7;
+}
+
+static inline int
+pri_severity(int pri)
+{
+    return pri & 0x7;
+}
+
 void
 micron_log_enqueue(int prio, char const *msgtext, char const *tag, pid_t pid)
 {
@@ -295,6 +307,13 @@ micron_log_enqueue(int prio, char const *msgtext, char const *tag, pid_t pid)
     log_open(NULL, -1);
     
     pthread_mutex_lock(&log_queue_mutex);
+
+    /* Supply default facility, unless prio already contains one.
+       Note: this means that we cannot use LOG_KERN, but that doesn't
+       really matter as we're not a kernel, anyway. */
+    if (pri_facility(prio) == 0)
+	prio |= micron_log_facility;
+	    
     if (micron_log_max_queue > 0 && micron_log_max_queue < 3)
 	micron_log_max_queue = MICRON_LOG_MAX_QUEUE;
 	/* Skip queue control */
@@ -314,7 +333,7 @@ micron_log_enqueue(int prio, char const *msgtext, char const *tag, pid_t pid)
 	dropped++;
        
 	snprintf(buf, sizeof(buf), "%zu messages dropped", dropped);
-	msg = log_message_create(micron_log_facility|LOG_CRIT,
+	msg = log_message_create(pri_facility(prio)|LOG_CRIT,
 				    buf, "micron_syslog",
 				    getpid());
 	if (msg) {
@@ -425,5 +444,82 @@ thr_syslog(void *ptr)
     log_stop = 0;
     return NULL;    
 }
+
+/* Conversion functions */
 
-    
+#define PRI_NUM(p) ((p) >> 3)
+#define NUM_PRI(n) ((n)<<3)
+#define NSTR(t) (sizeof(t)/sizeof(t[0]))
+
+static char const *strfac[] = {
+    [PRI_NUM(LOG_USER)] =      "USER"     ,
+    [PRI_NUM(LOG_DAEMON)] =    "DAEMON"   ,
+    [PRI_NUM(LOG_AUTH)] =      "AUTH"     ,
+    [PRI_NUM(LOG_AUTHPRIV)] =  "AUTHPRIV" ,
+    [PRI_NUM(LOG_MAIL)] =      "MAIL"     ,
+    [PRI_NUM(LOG_CRON)] =      "CRON"     ,
+    [PRI_NUM(LOG_LOCAL0)] =    "LOCAL0"   ,
+    [PRI_NUM(LOG_LOCAL1)] =    "LOCAL1"   ,
+    [PRI_NUM(LOG_LOCAL2)] =    "LOCAL2"   ,
+    [PRI_NUM(LOG_LOCAL3)] =    "LOCAL3"   ,
+    [PRI_NUM(LOG_LOCAL4)] =    "LOCAL4"   ,
+    [PRI_NUM(LOG_LOCAL5)] =    "LOCAL5"   ,
+    [PRI_NUM(LOG_LOCAL6)] =    "LOCAL6"   ,
+    [PRI_NUM(LOG_LOCAL7)] =    "LOCAL7"   ,
+};
+
+static char const *strpri[] = {
+    [LOG_EMERG] =   "EMERG",
+    [LOG_ALERT] =   "ALERT",  
+    [LOG_CRIT] =    "CRIT",  
+    [LOG_ERR] =     "ERR",
+    [LOG_WARNING] = "WARNING", 
+    [LOG_NOTICE] =  "NOTICE", 
+    [LOG_INFO] =    "INFO", 
+    [LOG_DEBUG] =   "DEBUG",
+};
+
+static inline int
+kw_to_num(char const *kw, char const **tab, int len)
+{
+    int i;
+    for (i = 0; i < len; i++)
+	if (tab[i] && strcasecmp(kw, tab[i]) == 0)
+	    return i;
+    return -1;
+}
+
+static inline char const *
+num_to_kw(int n, char const **tab, int len)
+{
+    if (n < 0 || n > len)
+	return NULL;
+    return tab[n];
+}
+
+int
+micron_log_str_to_fac(char const *str)
+{
+    int n = kw_to_num(str, strfac, NSTR(strfac));
+    return (n < 0) ? n : NUM_PRI(n);
+}
+
+int
+micron_log_str_to_pri(char const *str)
+{
+    return kw_to_num(str, strpri, NSTR(strpri));
+}
+
+char const *
+micron_log_fac_to_str(int n)
+{
+    if (n < 0)
+	return NULL;
+    return num_to_kw(PRI_NUM(n), strfac, NSTR(strfac));
+}
+
+char const *
+micron_log_pri_to_str(int n)
+{
+    return num_to_kw(n, strpri, NSTR(strpri));
+}

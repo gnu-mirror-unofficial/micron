@@ -76,6 +76,7 @@ struct crongroup {
 extern struct crongroup crongroups[];
 extern char *mailer_command;
 extern int syslog_enable;
+extern int syslog_facility;
 
 enum {
     EXIT_OK,
