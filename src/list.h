@@ -21,6 +21,7 @@ list_head_remove(struct list_head *head)
 {
     head->prev->next = head->next;
     head->next->prev = head->prev;
+    list_head_init(head);
 }
 
 static inline void
