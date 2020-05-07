@@ -37,4 +37,6 @@ int micron_parse(char const *spec, char **endp, struct micronent *ent);
 char const *micron_strerror(int ec);
 void micron_next(struct micronent const *ent, struct tm const *now,
 		 struct tm *next);
+int micron_next_time_from(struct micronent const *ent,
+			  struct timespec *ts_from, struct timespec *ts);
 int micron_next_time(struct micronent const *ent, struct timespec *ts);

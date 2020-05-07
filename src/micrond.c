@@ -33,9 +33,12 @@ struct crongroup crongroups[] = {
 
 /* Mode argument for crontab parsing founctions */
 enum {
-    PARSE_ALWAYS,      /* Always parse the file(s) */
-    PARSE_IF_MODIFIED  /* Parse the file only if mtime changed or if it
-			  is a new file */
+    PARSE_ALWAYS      = 0x00, /* Always parse the file(s) */
+    PARSE_IF_MODIFIED = 0x01, /* Parse the file only if mtime changed or
+				 if it is a new file */
+    PARSE_APPLY_NOW   = 0x02  /* Used together with any of the above means
+				 that the changes must be applied to the
+				 current minute. */
 };
 
 /* Return values from crontab safety checking and parsing functions */
@@ -644,15 +647,25 @@ cron_entry_alloc(int fileid, struct micronent const *schedule,
 }
 
 void
-cron_entry_insert(struct micron_entry *ent)
+cron_entry_insert(struct micron_entry *ent, int apply_now)
 {
     struct micron_entry *p;
     
     LIST_REMOVE(ent, list);
-    micron_next_time(&ent->schedule, &ent->next_time);
-
+    if (apply_now) {
+	struct timespec now;
+	clock_gettime(CLOCK_REALTIME, &now);
+	now.tv_sec -= 60;
+	micron_next_time_from(&ent->schedule, &now, &ent->next_time);
+    } else {
+	micron_next_time(&ent->schedule, &ent->next_time);
+    }
     LIST_FOREACH(p, &cron_entries, list) {
-	if (timespec_cmp(&ent->next_time, &p->next_time) <= 0)
+	int c;
+	/* Insert entries in their natural order (FIFO) ... */
+	if ((c = timespec_cmp(&ent->next_time, &p->next_time)) < 0
+	    /* except for internal entries, which are fired first */
+	    || (c == 0 && ent->internal))
 	    break;
     }
     LIST_INSERT_BEFORE(p, ent, list);
@@ -1016,7 +1029,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
     
     switch (crontab_check_file(cid, filename, &cp, &pwd)) {
     case CRONTAB_SUCCESS:
-	if (ifmod == PARSE_IF_MODIFIED)
+	if (ifmod & PARSE_IF_MODIFIED)
 	    return CRONTAB_SUCCESS;
 	break;
 
@@ -1223,7 +1236,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 		       ARGCRONTAB(cid, filename), line);
 	    break;
 	}
-	cron_entry_insert(cron_entry);
+	cron_entry_insert(cron_entry, ifmod & PARSE_APPLY_NOW);
     }
     fclose(fp);
     return CRONTAB_MODIFIED;
@@ -1246,7 +1259,7 @@ crontab_scanner_schedule(void)
 	return;
     }
     cp->internal = 1;
-    cron_entry_insert(cp);
+    cron_entry_insert(cp, 0);
 }
 
 static int
@@ -1377,8 +1390,11 @@ crontab_deleted(int cid, char const *name)
 void
 crontab_updated(int cid, char const *name)
 {
+    struct timespec ts;
     pthread_mutex_lock(&cron_mutex);
-    crontab_parse(cid, name, PARSE_ALWAYS);
+    clock_gettime(CLOCK_REALTIME, &ts);
+    crontab_parse(cid, name, PARSE_ALWAYS |
+		             (ts.tv_sec == 0 ? PARSE_APPLY_NOW : 0));
     pthread_cond_broadcast(&cron_cond);
     pthread_mutex_unlock(&cron_mutex);
 }
@@ -1420,7 +1436,7 @@ cron_thr_main(void *ptr)
 
 	    micron_log(LOG_DEBUG, "rescanning crontabs");
 	    for (cid = 0; cid < NCRONID; cid++)
-		crongroup_parse(cid, PARSE_IF_MODIFIED);
+		crongroup_parse(cid, PARSE_IF_MODIFIED | PARSE_APPLY_NOW);
 	} else {
 	    micron_log(LOG_DEBUG, "Running \"%s\" on behalf of %lu.%lu",
 		       entry->command, (unsigned long)entry->uid,
@@ -1428,7 +1444,7 @@ cron_thr_main(void *ptr)
 	    // enqueue entry
 	    runner_enqueue(entry);
 	}
-	cron_entry_insert(entry);
+	cron_entry_insert(entry, 0);
     }
 }
 

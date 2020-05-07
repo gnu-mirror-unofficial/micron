@@ -375,15 +375,13 @@ micron_next(struct micronent const *ent, struct tm const *now, struct tm *next)
 }
 
 int
-micron_next_time(struct micronent const *ent, struct timespec *ts)
+micron_next_time_from(struct micronent const *ent,
+		      struct timespec *ts_from, struct timespec *ts)
 {
-    struct timespec ts_now;
     struct tm now, next;
     time_t t;
 
-    clock_gettime(CLOCK_REALTIME, &ts_now);
-    t = ts_now.tv_sec;
-    if (!localtime_r(&t, &now))
+    if (!localtime_r(&ts_from->tv_sec, &now))
 	return MICRON_E_SYS;
     micron_next(ent, &now, &next);
     t = mktime(&next);
@@ -395,4 +393,13 @@ micron_next_time(struct micronent const *ent, struct timespec *ts)
     ts->tv_sec = t;
     ts->tv_nsec = 0;
     return MICRON_E_OK;
+}
+
+int
+micron_next_time(struct micronent const *ent, struct timespec *ts)
+{
+    struct timespec ts_now;
+
+    clock_gettime(CLOCK_REALTIME, &ts_now);
+    return micron_next_time_from(ent, &ts_now, ts);
 }
