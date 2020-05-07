@@ -56,6 +56,9 @@ char *mailer_command = "/usr/sbin/sendmail -oi -t";
 int syslog_enable;
 int syslog_facility = LOG_CRON;
 
+/* Boolean flag used to filter out @reboot jobs when rescanning. */
+static int running;
+
 int crongroup_parse(int cid, int ifmod);
 void *cron_thr_main(void *);
 
@@ -377,7 +380,7 @@ env_get(char *name, char **env)
     for (i = 0; env[i]; i++) {
 	if (strlen(env[i]) > len
 	    && memcmp(env[i], name, len) == 0
-	    &&  env[i][len] == '=')
+	    && env[i][len] == '=')
 	    return env[i] + len + 1;
     }
     return NULL;
@@ -617,7 +620,8 @@ cronjob_head_remove(int fileid)
 }
 
 static struct cronjob *
-cronjob_alloc(int fileid, struct micronent const *schedule,
+cronjob_alloc(int fileid, int type,
+	      struct micronent const *schedule,
 	      struct passwd const *pwd,
 	      char const *command, struct micron_environ *env)
 {
@@ -627,6 +631,7 @@ cronjob_alloc(int fileid, struct micronent const *schedule,
     job = malloc(size);
     if (job) {
 	memset(job, 0, size);
+	job->type = type;
 	job->fileid = fileid;
 	job->schedule = *schedule;
 	job->command = (char*)(job + 1);
@@ -652,22 +657,34 @@ cronjob_arm(struct cronjob *job, int apply_now)
     struct cronjob *p;
     
     LIST_REMOVE(job, list);
-    if (apply_now) {
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME, &now);
-	now.tv_sec -= 60;
-	micron_next_time_from(&job->schedule, &now, &job->next_time);
+
+    if (job->type == JOB_REBOOT) {
+	job->next_time.tv_sec = 0;
+	job->next_time.tv_nsec = 0;
+	LIST_FOREACH(p, &cronjob_head, list) {
+	    if (p->type != JOB_REBOOT)
+		break;
+	}
     } else {
-	micron_next_time(&job->schedule, &job->next_time);
+	if (apply_now) {
+	    struct timespec now;
+	    clock_gettime(CLOCK_REALTIME, &now);
+	    now.tv_sec -= 60;
+	    micron_next_time_from(&job->schedule, &now, &job->next_time);
+	} else {
+	    micron_next_time(&job->schedule, &job->next_time);
+	}
+    
+	LIST_FOREACH(p, &cronjob_head, list) {
+	    int c;
+	    /* Insert entries in their natural order (FIFO) ... */
+	    if ((c = timespec_cmp(&job->next_time, &p->next_time)) < 0
+		/* except for internal entries, which are fired first */
+		|| (c == 0 && job->type == JOB_INTERNAL))
+		break;
+	}
     }
-    LIST_FOREACH(p, &cronjob_head, list) {
-	int c;
-	/* Insert entries in their natural order (FIFO) ... */
-	if ((c = timespec_cmp(&job->next_time, &p->next_time)) < 0
-	    /* except for internal entries, which are fired first */
-	    || (c == 0 && job->internal))
-	    break;
-    }
+    
     LIST_INSERT_BEFORE(p, job, list);
 }
 
@@ -1005,6 +1022,20 @@ check_var(char const *def)
     return 0;
 }
 
+static inline int
+is_reboot(char const *s, char **endp)
+{
+    static char reboot_str[] = "@reboot";
+    static int reboot_len = sizeof(reboot_str) - 1;
+    
+    if (strncmp(s, reboot_str, reboot_len) == 0
+	&& (!s[reboot_len] || isws(s[reboot_len]))) {
+	*endp = (char*) (s + reboot_len);
+	return 1;
+    }
+    return 0;
+}
+
 static int
 crontab_parse(int cid, char const *filename, int ifmod)
 {
@@ -1031,6 +1062,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
     case CRONTAB_SUCCESS:
 	if (ifmod & PARSE_IF_MODIFIED)
 	    return CRONTAB_SUCCESS;
+	crontab_clear(cp, 1);
 	break;
 
     case CRONTAB_NEW:
@@ -1072,6 +1104,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
     off = 0;
     while (1) {
 	size_t len;
+	int type;
 	struct micronent schedule;
 	char *p;
 	char *user = NULL;
@@ -1173,13 +1206,18 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    continue;
 	} else
 	    env_cont = 0;
-	
-	rc = micron_parse(p, &p, &schedule);
-	if (rc) {
-	    micron_log(LOG_ERR, PRsCRONTAB ":%u: %s near %s",
-		       ARGCRONTAB(cid, filename), line,
-		       micron_strerror(rc), p);
-	    continue;
+
+	if (is_reboot(p, &p)) {
+	    type = JOB_REBOOT;
+	} else {
+	    rc = micron_parse(p, &p, &schedule);
+	    if (rc) {
+		micron_log(LOG_ERR, PRsCRONTAB ":%u: %s near %s",
+			   ARGCRONTAB(cid, filename), line,
+			   micron_strerror(rc), p);
+		continue;
+	    }
+	    type = JOB_NORMAL;
 	}
 
 	while (*p && isws(*p))
@@ -1213,6 +1251,13 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    }
 	}
 
+	if (running && type == JOB_REBOOT) {
+	    /* Ignore @reboot entries when running */
+	    micron_log(LOG_DEBUG, PRsCRONTAB ":%u: ignoring @reboot",
+			   ARGCRONTAB(cid, filename), line);
+	    continue;
+	}
+	
 	/* Finalize environment */
 	env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
 
@@ -1230,7 +1275,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    break;
 	}
 	    
-	job = cronjob_alloc(cp->fileid, &schedule, pwd, p, env);
+	job = cronjob_alloc(cp->fileid, type, &schedule, pwd, p, env);
 	if (!job) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cid, filename), line);
@@ -1248,17 +1293,17 @@ crontab_scanner_schedule(void)
     struct micronent schedule;
     struct cronjob *cp;
     LIST_FOREACH(cp, &cronjob_head, list) {
-	if (cp->internal)
+	if (cp->type == JOB_INTERNAL)
 	    return;
     }
     micron_parse("* * * * *", NULL, &schedule);
-    cp = cronjob_alloc(-1, &schedule, NULL, "<internal scanner>", NULL);
+    cp = cronjob_alloc(-1, JOB_INTERNAL, &schedule,
+		       NULL, "<internal scanner>", NULL);
     if (!cp) {
 	micron_log(LOG_ERR, "out of memory while installing internal scanner");
 	/* Try to continue anyway */
 	return;
     }
-    cp->internal = 1;
     cronjob_arm(cp, 0);
 }
 
@@ -1402,10 +1447,22 @@ crontab_updated(int cid, char const *name)
 void *
 cron_thr_main(void *ptr)
 {
-    micron_log(LOG_DEBUG, "main thread started");
+    struct cronjob *job;
+
     pthread_mutex_lock(&cronjob_mutex);
+
+    micron_log(LOG_INFO, "running reboot jobs");
+    while (!list_head_is_empty(&cronjob_head)) {
+	job = LIST_FIRST_ENTRY(&cronjob_head, job, list);
+	if (job->type != JOB_REBOOT)
+	    break;
+	LIST_REMOVE(job, list);
+	runner_enqueue(job);
+	cronjob_unref(job);
+    }
+    running = 1;
+    
     while (1) {
-	struct cronjob *job;
 	int rc;
 	
 	if (list_head_is_empty(&cronjob_head)) {
@@ -1414,7 +1471,8 @@ cron_thr_main(void *ptr)
 	}
 	
 	job = LIST_FIRST_ENTRY(&cronjob_head, job, list);
-	rc = pthread_cond_timedwait(&cronjob_cond, &cronjob_mutex, &job->next_time);
+	rc = pthread_cond_timedwait(&cronjob_cond, &cronjob_mutex,
+				    &job->next_time);
 	if (rc == 0)
 	    continue;
 	if (rc != ETIMEDOUT) {
@@ -1431,7 +1489,7 @@ cron_thr_main(void *ptr)
 	
 	LIST_REMOVE(job, list);
 
-	if (job->internal) {
+	if (job->type == JOB_INTERNAL) {
 	    int cid;
 
 	    micron_log(LOG_DEBUG, "rescanning crontabs");
@@ -1441,7 +1499,6 @@ cron_thr_main(void *ptr)
 	    micron_log(LOG_DEBUG, "Running \"%s\" on behalf of %lu.%lu",
 		       job->command, (unsigned long)job->uid,
 		       (unsigned long)job->gid);
-	    // enqueue job
 	    runner_enqueue(job);
 	}
 	cronjob_arm(job, 0);

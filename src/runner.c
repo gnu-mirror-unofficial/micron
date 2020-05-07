@@ -26,6 +26,7 @@ void
 runner_enqueue(struct cronjob *job)
 {
     pthread_mutex_lock(&runner_mutex);
+    cronjob_ref(job);
     LIST_HEAD_ENQUEUE(&runner_queue, job, runq);
     pthread_cond_broadcast(&runner_cond);
     pthread_mutex_unlock(&runner_mutex);
@@ -243,7 +244,6 @@ runner_start(struct cronjob *job)
 	fd = p[0];
     } 
     pt->fd = fd;
-    cronjob_ref(pt->job);
     if (pt_syslog) {
 	pthread_t tid;
 	pthread_create(&tid, NULL, cron_thr_logger, pt);

@@ -5,7 +5,14 @@
 
 #define MAXCRONTABLINE 1024
 
+enum {
+    JOB_NORMAL,
+    JOB_INTERNAL,
+    JOB_REBOOT
+};
+
 struct cronjob {
+    int type;                  /* Type of this job */
     struct micronent schedule; /* Time schedule entry */
     char *command;             /* Command to be run */
     uid_t uid;
@@ -15,7 +22,6 @@ struct cronjob {
     struct list_head list;     /* Links to the next and prev crontab entries */
     struct list_head runq;     /* Links to the next and prev runqueue entries */
     int fileid;                /* Crontab identifier */
-    int internal;              /* True if this is internal entry */
     unsigned refcnt;           /* Number of times this entry is referenced */
 };
 
