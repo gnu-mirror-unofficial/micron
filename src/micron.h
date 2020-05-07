@@ -25,18 +25,25 @@ enum {
     MICRON_E_BADCRON
 };
 
+enum {
+    MICRON_DAY_STRICT,
+    MICRON_DAY_VIXIE,
+    MICRON_DAY_DILLON
+};
+
 struct micronent {
     char min[60];
     char hrs[24];
     char day[32];
     char mon[12];
     char dow[8];   /* 0 or 7 is Sun */
+    int dsem;      /* Semantics of the dow and day fields */
 };
 
 int micron_parse(char const *spec, char **endp, struct micronent *ent);
 char const *micron_strerror(int ec);
-void micron_next(struct micronent const *ent, struct tm const *now,
-		 struct tm *next);
+int micron_next(struct micronent const *ent, struct tm const *now,
+		struct tm *next);
 int micron_next_time_from(struct micronent const *ent,
 			  struct timespec *ts_from, struct timespec *ts);
 int micron_next_time(struct micronent const *ent, struct timespec *ts);

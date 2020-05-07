@@ -182,12 +182,13 @@ micron_parse_timespec(char const *spec, char **endp, struct micronent *ent)
 		rc = micron_parse_entry_field(p, &p, ent->mon, 1, mon_names);
 		if (rc == 0) {
 		    rc = micron_parse_entry_field(p, &p, ent->dow, 0,
-						 dow_names);
+						  dow_names);
 		    if (rc == 0) {
 			if (ent->dow[7]) {
 			    ent->dow[0] = 1;
 			    ent->dow[7] = 0;
 			}
+			ent->dsem = MICRON_DAY_STRICT;
 		    }
 		}
 	    }
@@ -280,6 +281,25 @@ dayofweek(struct tm *tm)
     return (julianday(tm) + 1) % 7;
 }
 
+/* Day of week of the 1st day of the month */
+static inline int
+month_start_dayofweek(struct tm *tm)
+{
+    struct tm tm0 = *tm;
+    tm0.tm_mday = 1;
+    return dayofweek(&tm0);
+}
+
+/* Zero-based ordinal number of the day of week corresponding to
+   TM (e.g. 1st Monday, 3rd Saturday, etc.)
+*/
+static inline int
+downum(struct tm *tm)
+{
+    return (tm->tm_mday -
+	    (tm->tm_wday - month_start_dayofweek(tm) + 7) % 7 + 1) / 7;
+}
+
 static int month_start[]=
     {    0,  31,  59,  90, 120, 151, 181, 212, 243, 273, 304, 334, 365 };
     /* Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec */
@@ -342,7 +362,7 @@ next_minute(struct tm *tm)
     }
 }
 
-void
+int
 micron_next(struct micronent const *ent, struct tm const *now, struct tm *next)
 {
     *next = *now;
@@ -355,10 +375,59 @@ micron_next(struct micronent const *ent, struct tm const *now, struct tm *next)
 	    continue;
 	}
 
-	if (!(ent->day[next->tm_mday-1] == 1
-	      && ent->dow[next->tm_wday])) {
-	    next_day(next);
-	    continue;
+	switch (ent->dsem) {
+	case MICRON_DAY_STRICT:
+	    if (!(ent->day[next->tm_mday-1] && ent->dow[next->tm_wday])) {
+		next_day(next);
+		continue;
+	    }
+	    break;
+
+	case MICRON_DAY_VIXIE:
+	    /*
+	     * DAY SEMANTICS ACCORDING TO VIXIE-STYLE CRONTABS:
+	     *
+	     * The day of a command's execution can be specified by two fields 
+	     * day of month, and day of week.  If both fields are restricted
+	     * (i.e., aren't *), the command will be run when either field
+	     * matches the current time.  For example, ``30 4 1,15 * 5''
+	     * would cause a command to be run at 4:30 am on the 1st and 15th
+	     * of each month, plus every Friday.
+	     */
+	    if (!(ent->day[next->tm_mday-1] || ent->dow[next->tm_wday])) {
+		next_day(next);
+		continue;
+	    }
+	    break;
+
+	case MICRON_DAY_DILLON:
+	    /*
+	     * DAY SEMANTICS ACCORDING OT DILLON-STYLE CRONTABS:
+	     *
+	     * If you specify both a day in the month and a day of week,
+	     * it will be interpreted as the Nth such day in the month.
+	     * ...
+	     * To request the last Monday, etc. in a month, ask for the
+	     * "5th" one.  This will always match the last Monday, etc.,
+	     * even if there are only four Mondays in the month:
+	     *
+	     * # run at 11 am on the first and last Mon, Tue, Wed of each month
+	     * 0 11 1,5 * mon-wed date
+	     *
+	     * When the fourth Monday in a month is the last, it will match
+	     * against both the "4th" and the "5th" (it will only run once
+	     * if both are specified).
+	     */
+	    if (!(ent->dow[next->tm_wday] &&
+		  (ent->day[downum(next)] ||
+		   (ent->day[4] && (monthdays(next) - next->tm_mday) < 7)))) {
+		next_day(next);
+		continue;
+	    }
+	    break;
+	    
+	default:
+	    return MICRON_E_BADCRON;
 	}
 
 	if (!ent->hrs[next->tm_hour]) {
@@ -372,6 +441,7 @@ micron_next(struct micronent const *ent, struct tm const *now, struct tm *next)
 	}
 	break;
     }
+    return MICRON_E_OK;
 }
 
 int
@@ -380,10 +450,13 @@ micron_next_time_from(struct micronent const *ent,
 {
     struct tm now, next;
     time_t t;
-
+    int rc;
+    
     if (!localtime_r(&ts_from->tv_sec, &now))
 	return MICRON_E_SYS;
-    micron_next(ent, &now, &next);
+    rc = micron_next(ent, &now, &next);
+    if (rc)
+	return rc;
     t = mktime(&next);
     if (t == (time_t)-1)
 	return MICRON_E_SYS;
