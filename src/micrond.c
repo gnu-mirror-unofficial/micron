@@ -600,75 +600,75 @@ err:
     return NULL;
 }
 
-static struct list_head cron_entries = LIST_HEAD_INITIALIZER(cron_entries);
-static pthread_mutex_t cron_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t cron_cond = PTHREAD_COND_INITIALIZER;
+static struct list_head cronjob_head = LIST_HEAD_INITIALIZER(cronjob_head);
+static pthread_mutex_t cronjob_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cronjob_cond = PTHREAD_COND_INITIALIZER;
 
 static void
-cron_entries_remove(int fileid)
+cronjob_head_remove(int fileid)
 {
-    struct micron_entry *cp, *prev;
-    LIST_FOREACH_SAFE(cp, prev, &cron_entries, list) {
+    struct cronjob *cp, *prev;
+    LIST_FOREACH_SAFE(cp, prev, &cronjob_head, list) {
 	if (cp->fileid == fileid) {
 	    LIST_REMOVE(cp, list);
-	    micron_entry_unref(cp);
+	    cronjob_unref(cp);
 	}
     }
 }
 
-static struct micron_entry *
-cron_entry_alloc(int fileid, struct micronent const *schedule,
-		 struct passwd const *pwd,
-		 char const *command, struct micron_environ *env)
+static struct cronjob *
+cronjob_alloc(int fileid, struct micronent const *schedule,
+	      struct passwd const *pwd,
+	      char const *command, struct micron_environ *env)
 {
-    struct micron_entry *cp;
-    size_t size = sizeof(*cp) + strlen(command) + 1;
+    struct cronjob *job;
+    size_t size = sizeof(*job) + strlen(command) + 1;
     
-    cp = malloc(size);
-    if (cp) {
-	memset(cp, 0, size);
-	cp->fileid = fileid;
-	cp->schedule = *schedule;
-	cp->command = (char*)(cp + 1);
-	strcpy(cp->command, command);
+    job = malloc(size);
+    if (job) {
+	memset(job, 0, size);
+	job->fileid = fileid;
+	job->schedule = *schedule;
+	job->command = (char*)(job + 1);
+	strcpy(job->command, command);
 	if (pwd) {
-	    cp->uid = pwd->pw_uid;
-	    cp->gid = pwd->pw_gid;
+	    job->uid = pwd->pw_uid;
+	    job->gid = pwd->pw_gid;
 	} else {
-	    cp->uid = 0;
-	    cp->gid = 0;
+	    job->uid = 0;
+	    job->gid = 0;
 	}
-	list_head_init(&cp->list);
-	list_head_init(&cp->runq);
-	cp->env = env;
-	micron_entry_ref(cp);
+	list_head_init(&job->list);
+	list_head_init(&job->runq);
+	job->env = env;
+	cronjob_ref(job);
     }
-    return cp;
+    return job;
 }
 
 void
-cron_entry_insert(struct micron_entry *ent, int apply_now)
+cronjob_arm(struct cronjob *job, int apply_now)
 {
-    struct micron_entry *p;
+    struct cronjob *p;
     
-    LIST_REMOVE(ent, list);
+    LIST_REMOVE(job, list);
     if (apply_now) {
 	struct timespec now;
 	clock_gettime(CLOCK_REALTIME, &now);
 	now.tv_sec -= 60;
-	micron_next_time_from(&ent->schedule, &now, &ent->next_time);
+	micron_next_time_from(&job->schedule, &now, &job->next_time);
     } else {
-	micron_next_time(&ent->schedule, &ent->next_time);
+	micron_next_time(&job->schedule, &job->next_time);
     }
-    LIST_FOREACH(p, &cron_entries, list) {
+    LIST_FOREACH(p, &cronjob_head, list) {
 	int c;
 	/* Insert entries in their natural order (FIFO) ... */
-	if ((c = timespec_cmp(&ent->next_time, &p->next_time)) < 0
+	if ((c = timespec_cmp(&job->next_time, &p->next_time)) < 0
 	    /* except for internal entries, which are fired first */
-	    || (c == 0 && ent->internal))
+	    || (c == 0 && job->internal))
 	    break;
     }
-    LIST_INSERT_BEFORE(p, ent, list);
+    LIST_INSERT_BEFORE(p, job, list);
 }
 
 struct crontab {
@@ -720,7 +720,7 @@ void
 crontab_clear(struct crontab *cp, int reset)
 {
     struct micron_environ *env;
-    cron_entries_remove(cp->fileid);
+    cronjob_head_remove(cp->fileid);
     while ((env = LIST_HEAD_POP(&cp->env_head,env,link)) != NULL) {
 	if (reset && list_head_is_empty(&cp->env_head)) {
 	    LIST_HEAD_PUSH(&cp->env_head,env,link);
@@ -739,12 +739,12 @@ crontab_forget(struct crontab *cp)
 }
 
 char **
-micron_entry_env(struct micron_entry *ent)
+cronjob_mkenv(struct cronjob *job)
 {
     struct crontab *cp;
     LIST_FOREACH(cp, &crontabs, list) {
-	if (cp->fileid == ent->fileid)
-	    return micron_environ_build(ent->env, &cp->env_head);
+	if (cp->fileid == job->fileid)
+	    return micron_environ_build(job->env, &cp->env_head);
     }
     micron_log(LOG_ERR, "crontab fileid not found; please report");
     return NULL;
@@ -1014,7 +1014,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
     char buf[MAXCRONTABLINE+1];
     size_t off;
     unsigned line = 0;
-    struct micron_entry *cron_entry;
+    struct cronjob *job;
     struct passwd *pwd;
     int env_cont = 1;
     struct micron_environ *env;
@@ -1230,13 +1230,13 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    break;
 	}
 	    
-	cron_entry = cron_entry_alloc(cp->fileid, &schedule, pwd, p, env);
-	if (!cron_entry) {
+	job = cronjob_alloc(cp->fileid, &schedule, pwd, p, env);
+	if (!job) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cid, filename), line);
 	    break;
 	}
-	cron_entry_insert(cron_entry, ifmod & PARSE_APPLY_NOW);
+	cronjob_arm(job, ifmod & PARSE_APPLY_NOW);
     }
     fclose(fp);
     return CRONTAB_MODIFIED;
@@ -1246,20 +1246,20 @@ void
 crontab_scanner_schedule(void)
 {
     struct micronent schedule;
-    struct micron_entry *cp;
-    LIST_FOREACH(cp, &cron_entries, list) {
+    struct cronjob *cp;
+    LIST_FOREACH(cp, &cronjob_head, list) {
 	if (cp->internal)
 	    return;
     }
     micron_parse("* * * * *", NULL, &schedule);
-    cp = cron_entry_alloc(-1, &schedule, NULL, "<internal scanner>", NULL);
+    cp = cronjob_alloc(-1, &schedule, NULL, "<internal scanner>", NULL);
     if (!cp) {
 	micron_log(LOG_ERR, "out of memory while installing internal scanner");
 	/* Try to continue anyway */
 	return;
     }
     cp->internal = 1;
-    cron_entry_insert(cp, 0);
+    cronjob_arm(cp, 0);
 }
 
 static int
@@ -1381,40 +1381,40 @@ void
 crontab_deleted(int cid, char const *name)
 {
     struct crontab *cp = crontab_find(cid, name, 1);
-    pthread_mutex_lock(&cron_mutex);
-    cron_entries_remove(cp->fileid);
-    pthread_cond_broadcast(&cron_cond);
-    pthread_mutex_unlock(&cron_mutex);
+    pthread_mutex_lock(&cronjob_mutex);
+    cronjob_head_remove(cp->fileid);
+    pthread_cond_broadcast(&cronjob_cond);
+    pthread_mutex_unlock(&cronjob_mutex);
 }
 
 void
 crontab_updated(int cid, char const *name)
 {
     struct timespec ts;
-    pthread_mutex_lock(&cron_mutex);
+    pthread_mutex_lock(&cronjob_mutex);
     clock_gettime(CLOCK_REALTIME, &ts);
     crontab_parse(cid, name, PARSE_ALWAYS |
 		             (ts.tv_sec == 0 ? PARSE_APPLY_NOW : 0));
-    pthread_cond_broadcast(&cron_cond);
-    pthread_mutex_unlock(&cron_mutex);
+    pthread_cond_broadcast(&cronjob_cond);
+    pthread_mutex_unlock(&cronjob_mutex);
 }
 
 void *
 cron_thr_main(void *ptr)
 {
     micron_log(LOG_DEBUG, "main thread started");
-    pthread_mutex_lock(&cron_mutex);
+    pthread_mutex_lock(&cronjob_mutex);
     while (1) {
-	struct micron_entry *entry;
+	struct cronjob *job;
 	int rc;
 	
-	if (list_head_is_empty(&cron_entries)) {
-	    pthread_cond_wait(&cron_cond, &cron_mutex);
+	if (list_head_is_empty(&cronjob_head)) {
+	    pthread_cond_wait(&cronjob_cond, &cronjob_mutex);
 	    continue;
 	}
 	
-	entry = LIST_FIRST_ENTRY(&cron_entries, entry, list);
-	rc = pthread_cond_timedwait(&cron_cond, &cron_mutex, &entry->next_time);
+	job = LIST_FIRST_ENTRY(&cronjob_head, job, list);
+	rc = pthread_cond_timedwait(&cronjob_cond, &cronjob_mutex, &job->next_time);
 	if (rc == 0)
 	    continue;
 	if (rc != ETIMEDOUT) {
@@ -1424,14 +1424,14 @@ cron_thr_main(void *ptr)
 	    exit(EXIT_FATAL);
 	}
 
-	if (entry != LIST_FIRST_ENTRY(&cron_entries, entry, list)) {
+	if (job != LIST_FIRST_ENTRY(&cronjob_head, job, list)) {
 	    /* Just in case... */
 	    continue;
 	}
 	
-	LIST_REMOVE(entry, list);
+	LIST_REMOVE(job, list);
 
-	if (entry->internal) {
+	if (job->internal) {
 	    int cid;
 
 	    micron_log(LOG_DEBUG, "rescanning crontabs");
@@ -1439,12 +1439,12 @@ cron_thr_main(void *ptr)
 		crongroup_parse(cid, PARSE_IF_MODIFIED | PARSE_APPLY_NOW);
 	} else {
 	    micron_log(LOG_DEBUG, "Running \"%s\" on behalf of %lu.%lu",
-		       entry->command, (unsigned long)entry->uid,
-		       (unsigned long)entry->gid);
-	    // enqueue entry
-	    runner_enqueue(entry);
+		       job->command, (unsigned long)job->uid,
+		       (unsigned long)job->gid);
+	    // enqueue job
+	    runner_enqueue(job);
 	}
-	cron_entry_insert(entry, 0);
+	cronjob_arm(job, 0);
     }
 }
 

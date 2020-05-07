@@ -23,20 +23,20 @@ static pthread_cond_t runner_cond = PTHREAD_COND_INITIALIZER;
 static struct list_head runner_queue = LIST_HEAD_INITIALIZER(runner_queue);
 
 void
-runner_enqueue(struct micron_entry *entry)
+runner_enqueue(struct cronjob *job)
 {
     pthread_mutex_lock(&runner_mutex);
-    LIST_HEAD_ENQUEUE(&runner_queue, entry, runq);
+    LIST_HEAD_ENQUEUE(&runner_queue, job, runq);
     pthread_cond_broadcast(&runner_cond);
     pthread_mutex_unlock(&runner_mutex);
 }
 
-static inline struct micron_entry *
+static inline struct cronjob *
 runner_dequeue(void)
 {
     //FIXME: dummy variable to satisfy the macro below
-    struct micron_entry *entry;
-    return LIST_HEAD_DEQUEUE(&runner_queue, entry, runq);
+    struct cronjob *job;
+    return LIST_HEAD_DEQUEUE(&runner_queue, job, runq);
 }
 
 static void *cron_thr_logger(void *arg);
@@ -49,7 +49,7 @@ enum {
 struct proctab {
     int type;
     pid_t pid;
-    struct micron_entry *ent;
+    struct cronjob *job;
     char **env;
     int fd;
     int syslog;
@@ -86,7 +86,7 @@ static inline void
 proctab_remove(struct proctab *pt)
 {
     LIST_REMOVE(pt, link);
-    micron_entry_unref(pt->ent);
+    cronjob_unref(pt->job);
     env_free(pt->env);
     if (pt->fd != -1)
 	close(pt->fd);
@@ -114,7 +114,7 @@ proctab_lookup_safe(pid_t pid)
 extern char **environ;
 
 static void
-runner_start(struct micron_entry *ent)
+runner_start(struct cronjob *job)
 {
     pid_t pid;
     char **env;
@@ -124,7 +124,7 @@ runner_start(struct micron_entry *ent)
     int pt_syslog = 0;
     char const *ep;
     
-    env = micron_entry_env(ent);
+    env = cronjob_mkenv(job);
     if (!env) {
 	micron_log(LOG_ERR, "can't create environment");
 	return;
@@ -196,20 +196,20 @@ runner_start(struct micron_entry *ent)
 	environ = env;
 
 	/* Switch to user privileges */
-	if (setgid(ent->gid)) {
-	    micron_log(LOG_ERR, "setgid(%lu): %s", ent->gid, strerror(errno));
+	if (setgid(job->gid)) {
+	    micron_log(LOG_ERR, "setgid(%lu): %s", job->gid, strerror(errno));
 	    _exit(127);
 	}
 
-	if (initgroups(env_get("LOGNAME", env), ent->gid)) {
+	if (initgroups(env_get("LOGNAME", env), job->gid)) {
 	    micron_log(LOG_ERR, "initgroups(%s,%lu): %s",
-		       env_get("LOGNAME", env), ent->gid,
+		       env_get("LOGNAME", env), job->gid,
 		       strerror(errno));
 	    _exit(127);
 	}
 
-	if (setuid(ent->uid)) {
-	    micron_log(LOG_ERR, "setuid(%lu): %s", ent->uid, strerror(errno));
+	if (setuid(job->uid)) {
+	    micron_log(LOG_ERR, "setuid(%lu): %s", job->uid, strerror(errno));
 	    _exit(127);
 	}
 
@@ -225,9 +225,9 @@ runner_start(struct micron_entry *ent)
 	}
 
 	shell = env_get("SHELL", env);
-	execle(shell, shell, "-c", ent->command, NULL, env);
+	execle(shell, shell, "-c", job->command, NULL, env);
 	fprintf(stderr, "execle failed: shell=%s, command=%s\n",
-		shell, ent->command);
+		shell, job->command);
 	_exit(127);
     }
 
@@ -235,7 +235,7 @@ runner_start(struct micron_entry *ent)
     pt = proctab_alloc();
     pt->type = PROCTAB_COMM;
     pt->pid = pid;
-    pt->ent = ent;
+    pt->job = job;
     pt->env = env;
     pt->syslog = pt_syslog;
     if (pt_syslog) {
@@ -243,7 +243,7 @@ runner_start(struct micron_entry *ent)
 	fd = p[0];
     } 
     pt->fd = fd;
-    micron_entry_ref(pt->ent);
+    cronjob_ref(pt->job);
     if (pt_syslog) {
 	pthread_t tid;
 	pthread_create(&tid, NULL, cron_thr_logger, pt);
@@ -258,7 +258,7 @@ mailer_start(struct proctab *pt, const char *mailto)
     pid_t pid;
     
     micron_log(LOG_DEBUG, "command=\"%s\", mailing results to %s",
-	       pt->ent->command, mailto);
+	       pt->job->command, mailto);
     pid = fork();
     if (pid == -1) {
 	micron_log(LOG_ERR, "fork: %s", strerror(errno));
@@ -311,7 +311,7 @@ mailer_start(struct proctab *pt, const char *mailto)
 		mailfrom, hostname);
 	fprintf(out, "To: %s\n", mailto);
 	fprintf(out, "Subject: Cron <%s@%s> %s\n",
-		mailfrom, hostname, pt->ent->command);
+		mailfrom, hostname, pt->job->command);
 	for (i = 0; pt->env[i]; i++) {
 	    fprintf(out, "X-Cron-Env: %s\n", pt->env[i]);
 	}
@@ -337,11 +337,11 @@ cron_thr_runner(void *ptr)
 {
     pthread_mutex_lock(&runner_mutex);
     while (1) {
-	struct micron_entry *ent;
+	struct cronjob *job;
 	
 	pthread_cond_wait(&runner_cond, &runner_mutex);
-	while ((ent = runner_dequeue()) != NULL)
-	    runner_start(ent);
+	while ((job = runner_dequeue()) != NULL)
+	    runner_start(job);
     }
     return NULL;
 }
@@ -375,13 +375,13 @@ cron_thr_cleaner(void *ptr)
 	    if (WIFEXITED(status)) {
 		int code = WEXITSTATUS(status);
 		micron_log(LOG_DEBUG, "exit=%d, command=\"%s\"",
-			   code, pt->ent->command);
+			   code, pt->job->command);
 	    } else if (WIFSIGNALED(status)) {
 		micron_log(LOG_DEBUG, "signal=%d, command=\"%s\"",
-			   WTERMSIG(status), pt->ent->command);
+			   WTERMSIG(status), pt->job->command);
 	    } else
 		micron_log(LOG_DEBUG, "status=%d, command=\"%s\"",
-			   status, pt->ent->command);
+			   status, pt->job->command);
 
 	    /* See whether results should be mailed to anybody */
 	    if (!pt->syslog) {
@@ -417,10 +417,10 @@ cron_thr_logger(void *arg)
     FILE *fp;
     char buf[MICRON_LOG_BUF_SIZE];
     
-    len = strcspn(pt->ent->command, " \t");
+    len = strcspn(pt->job->command, " \t");
     tag = malloc(len + 1);
     if (tag) {
-	memcpy(tag, pt->ent->command, len);
+	memcpy(tag, pt->job->command, len);
 	tag[len] = 0;
     }
     fp = fdopen(fd, "r");

@@ -5,7 +5,7 @@
 
 #define MAXCRONTABLINE 1024
 
-struct micron_entry {
+struct cronjob {
     struct micronent schedule; /* Time schedule entry */
     char *command;             /* Command to be run */
     uid_t uid;
@@ -20,13 +20,13 @@ struct micron_entry {
 };
 
 static inline void
-micron_entry_ref(struct micron_entry *cp)
+cronjob_ref(struct cronjob *cp)
 {
     cp->refcnt++;
 }
 
-static inline struct micron_entry *
-micron_entry_unref(struct micron_entry *cp)
+static inline struct cronjob *
+cronjob_unref(struct cronjob *cp)
 {
     if (--cp->refcnt == 0) {
 	LIST_REMOVE(cp, list);
@@ -93,13 +93,13 @@ void crontab_scanner_schedule(void);
 void *cron_thr_runner(void *ptr);
 void *cron_thr_cleaner(void *ptr);
 
-void runner_enqueue(struct micron_entry *entry);
+void runner_enqueue(struct cronjob *job);
 
 char *catfilename(char const *dir, char const *file);
 int parsefilename(char const *filename, char **dirname, char **basename);
 void *memrealloc(void *p, size_t *pn, size_t s);
 
-char **micron_entry_env(struct micron_entry *ent);
+char **cronjob_mkenv(struct cronjob *job);
 void env_free(char **env);
 char const *env_get(char *name, char **env);
 
