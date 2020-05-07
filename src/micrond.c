@@ -127,7 +127,7 @@ crongroup_option(char const *arg)
 
 		if (stat(filename, &st)) {
 		    micron_log(LOG_CRIT, "%s: can't stat %s: %s",
-			       arg, filename);
+			       arg, filename, strerror(errno));
 		    exit(EXIT_FATAL);
 		}
 		if (S_ISDIR(st.st_mode)) {
@@ -874,8 +874,11 @@ crontab_check_file(int cid, char const *filename,
 		   strerror(errno));
 	return CRONTAB_FAILURE;
     }
-    if (!(S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)))
+    if (!S_ISREG(st.st_mode)) {
+	micron_log(LOG_ERR, PRsCRONTAB ": not a regular file",
+		   ARGCRONTAB(cid, filename));
 	return CRONTAB_FAILURE;
+    }
     if (cid == CRONID_USER) {
 	username = filename;
     } else {
@@ -898,30 +901,6 @@ crontab_check_file(int cid, char const *filename,
 		   ARGCRONTAB(cid, filename));
 	if (!no_safety_checking)
 	    return CRONTAB_FAILURE;
-    }
-    if (S_ISLNK(st.st_mode)) {
-	if (fstatat(crongroups[cid].dirfd, filename, &st, 0)) {
-	    micron_log(LOG_ERR, "can't stat file " PRsCRONTAB ": %s",
-		       ARGCRONTAB(cid, filename),
-		       strerror(errno));
-	    return CRONTAB_FAILURE;
-	}
-	if (!(st.st_mode & S_IFREG))
-	    return CRONTAB_FAILURE;
-	if (st.st_uid != pwd->pw_uid) {
-	    micron_log(LOG_ERR, PRsCRONTAB
-		       " points to file not owned by %s; ignored",
-		       ARGCRONTAB(cid, filename), username);
-	    if (!no_safety_checking)
-		return CRONTAB_FAILURE;
-	}
-	if (st.st_mode & (S_IRWXG | S_IRWXO)) {
-	    micron_log(LOG_ERR, PRsCRONTAB
-		       "points to file with unsafe permissions",
-		       ARGCRONTAB(cid, filename));
-	    if (!no_safety_checking)
-		return CRONTAB_FAILURE;
-	}
     }
 
     *ppwd = pwd;
@@ -1340,33 +1319,11 @@ crongroup_parse(int cid, int ifmod)
 	if (!no_safety_checking)
 	    return CRONTAB_FAILURE;
     }
-    if (st.st_mode & (S_IRWXG | S_IRWXO)) {
+    if (st.st_mode & S_IWOTH) {
 	micron_log(LOG_ERR, "%s: unsafe permissions",
 		   cdef->dirname);
 	if (!no_safety_checking)
 	    return CRONTAB_FAILURE;
-    }
-    if (S_ISLNK(st.st_mode)) {
-	if (fstatat(AT_FDCWD, cdef->dirname, &st, 0)) {
-	    micron_log(LOG_ERR, "can't stat file %s: %s",
-		       cdef->dirname,
-		       strerror(errno));
-	    return CRONTAB_FAILURE;
-	}
-	if (st.st_uid != 0) {
-	    micron_log(LOG_ERR,
-		       "%s points to file not owned by root; ignored",
-		       cdef->dirname);
-	    if (!no_safety_checking)
-		return CRONTAB_FAILURE;
-	}
-	if (st.st_mode & (S_IRWXG | S_IRWXO)) {
-	    micron_log(LOG_ERR, 
-		       "%s: points to file with unsafe permissions",
-		       cdef->dirname);
-	    if (!no_safety_checking)
-		return CRONTAB_FAILURE;
-	}
     }
     if (!S_ISDIR(st.st_mode)) {
 	micron_log(LOG_ERR, "%s: not a directory", cdef->dirname);

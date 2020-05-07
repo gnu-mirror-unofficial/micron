@@ -198,19 +198,21 @@ runner_start(struct cronjob *job)
 
 	/* Switch to user privileges */
 	if (setgid(job->gid)) {
-	    micron_log(LOG_ERR, "setgid(%lu): %s", job->gid, strerror(errno));
+	    micron_log(LOG_ERR, "setgid(%lu): %s",
+		       (unsigned long)job->gid, strerror(errno));
 	    _exit(127);
 	}
 
 	if (initgroups(env_get("LOGNAME", env), job->gid)) {
 	    micron_log(LOG_ERR, "initgroups(%s,%lu): %s",
-		       env_get("LOGNAME", env), job->gid,
+		       env_get("LOGNAME", env), (unsigned long)job->gid,
 		       strerror(errno));
 	    _exit(127);
 	}
 
 	if (setuid(job->uid)) {
-	    micron_log(LOG_ERR, "setuid(%lu): %s", job->uid, strerror(errno));
+	    micron_log(LOG_ERR, "setuid(%lu): %s",
+		       (unsigned long)job->uid, strerror(errno));
 	    _exit(127);
 	}
 

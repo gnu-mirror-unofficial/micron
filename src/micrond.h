@@ -57,7 +57,8 @@ timespec_cmp(struct timespec const *a, struct timespec const *b)
     return 0;
 }
 
-extern void (*micron_log)(int prio, char const *, ...);
+extern void (*micron_log)(int prio, char const *, ...)
+    ATTR_PRINTFLIKE(2,3);
 
 enum {
     CRONID_MASTER,
