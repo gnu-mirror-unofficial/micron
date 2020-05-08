@@ -1277,7 +1277,10 @@ crontab_parse(int cid, char const *filename, int ifmod)
 			   ARGCRONTAB(cid, filename), line, user);
 		continue;
 	    }
-	}
+
+	    while (*p && isws(*p))
+	        p++;
+        }
 
 	if (running && type == JOB_REBOOT) {
 	    /* Ignore @reboot entries when running */
@@ -1291,6 +1294,8 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	
 	if (!micron_environ_get(env, &cp->env_head, "HOME")) 
 	    micron_environ_set(&env, "HOME", pwd->pw_dir);
+	if (!micron_environ_get(env, &cp->env_head, "SHELL")) 
+	    micron_environ_set(&env, "SHELL", "/bin/sh");
     
 	if (micron_environ_set(&env, "LOGNAME", pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",

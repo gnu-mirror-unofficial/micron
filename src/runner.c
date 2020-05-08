@@ -28,11 +28,8 @@
 #include <sys/select.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include "micrond.h"
-
-#ifndef HOST_NAME_MAX
-# define HOST_NAME_MAX 256
-#endif
 
 static pthread_mutex_t runner_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t runner_cond = PTHREAD_COND_INITIALIZER;

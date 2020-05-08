@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
@@ -252,10 +253,30 @@ log_message_create(int prio, char const *msgtext, char const *tag, pid_t pid)
 {
     struct log_message *msg;
     char sbuf[MICRON_LOG_BUF_SIZE];
+    char tbuf[sizeof("May  8 11:42:27")];
+    char hostbuf[HOST_NAME_MAX];
     size_t len;
-    
-    snprintf(sbuf, sizeof(sbuf), "<%d>%s[%lu]: %s", prio, tag,
-	     (unsigned long)pid, msgtext);
+    struct timeval tv;
+    struct tm tm;
+
+    gettimeofday(&tv, NULL);
+    localtime_r(&tv.tv_sec, &tm);
+    strftime(tbuf, sizeof(tbuf), "%b %d %H:%M:%S", &tm);
+    if (log_family == PF_UNIX) {
+	snprintf(sbuf, sizeof(sbuf), "<%d>%s %s[%lu]: %s", 
+		 prio, 
+		 tbuf,
+		 tag,
+		 (unsigned long)pid, msgtext);
+    } else {
+	gethostname(hostbuf, HOST_NAME_MAX+1);
+	snprintf(sbuf, sizeof(sbuf), "<%d>%s %s %s[%lu]: %s", 
+		 prio, 
+		 tbuf,
+		 hostbuf,
+		 tag,
+		 (unsigned long)pid, msgtext);
+    }
     len = strlen(sbuf);
     msg = malloc(sizeof(*msg) + len);
     if (msg) {
