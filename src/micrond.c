@@ -40,10 +40,37 @@ static char const *backup_file_table[] = {
 };
 
 struct crongroup crongroups[] = {
-    { "master", NULL, -1, "/etc/crontab", NULL, CDF_SINGLE },
-    { "system", "/etc/cron.d", -1, NULL, backup_file_table, CDF_DEFAULT },
-    { "user", "/var/spool/cron/crontabs", -1, NULL, backup_file_table,
-      CDF_DEFAULT }
+    {   /*
+	 * The master crongroup consists of a single /etc/crontab file.
+	 * The .pattern will be split into directory prefix and a file
+	 * name in main.
+	 */
+	.id = "master",
+	.dirfd = -1,
+	.pattern = "/etc/crontab",
+	.flags = CGF_SINGLE
+    },
+    {   /*
+	 * The system crongroup comprises multiple files stored in
+	 * /etc/cron.d
+	 */
+	.id = "system",
+	.dirname = "/etc/cron.d",
+	.dirfd = -1,
+	.exclude = backup_file_table,
+	.flags = CGF_DEFAULT
+    },
+    {   /*
+	 * The user crongroup contains personal user crontabs.  The
+	 * crontabs should not contain the user field.  It is deduced
+	 * from the file name itself.
+	 */
+	.id = "user",
+	.dirname = "/var/spool/cron/crontabs",
+	.dirfd = -1,
+	.exclude = backup_file_table,
+	.flags = CGF_USER
+    }
 };
 
 /* Mode argument for crontab parsing founctions */
@@ -139,7 +166,7 @@ crongroup_option(char const *arg)
     for (i = 0; i < NCRONID; i++) {
 	if (strncmp(crongroups[i].id, arg, len) == 0) {
 	    if (neg)
-		crongroups[i].flags |= CDF_DISABLED;
+		crongroups[i].flags |= CGF_DISABLED;
 	    else {
 		char *filename = (char *) (arg + len + 1);
 		struct stat st;
@@ -155,6 +182,7 @@ crongroup_option(char const *arg)
 			crongroups[i].pattern = "crontab";
 		} else
 		    crongroups[i].pattern = filename;
+		crongroups[i].flags &= ~CGF_DISABLED;
 	    }
 	    return;
 	}
@@ -227,7 +255,7 @@ main(int argc, char **argv)
     }
 
     for (i = 0; i < NCRONID; i++) {
-	if (crongroups[i].flags & CDF_DISABLED)
+	if (crongroups[i].flags & CGF_DISABLED)
 	    continue;
 	if (!crongroups[i].dirname) {
 	    if (crongroups[i].pattern) {
@@ -236,7 +264,7 @@ main(int argc, char **argv)
 				  &crongroups[i].pattern))
 		    nomem_exit();
 	    } else
-		crongroups[i].flags |= CDF_DISABLED;
+		crongroups[i].flags |= CGF_DISABLED;
 	}
     }
 
@@ -909,7 +937,7 @@ crontab_check_file(int cid, char const *filename,
 		   ARGCRONTAB(cid, filename));
 	return CRONTAB_FAILURE;
     }
-    if (cid == CRONID_USER) {
+    if (crongroups[cid].flags & CRONID_USER) {
 	username = filename;
     } else {
 	username = "root";
@@ -1078,10 +1106,10 @@ crontab_parse(int cid, char const *filename, int ifmod)
     struct micron_environ *env;
     
     /* Do nothing if this crongroup is disabled */
-    if (crongroups[cid].flags & CDF_DISABLED)
+    if (crongroups[cid].flags & CGF_DISABLED)
 	return CRONTAB_SUCCESS;
     /* Do nothing if we're not interested in this file */
-    if ((crongroups[cid].flags & CDF_SINGLE) &&
+    if ((crongroups[cid].flags & CGF_SINGLE) &&
 	strcmp(crongroups[cid].pattern, filename))
 	return CRONTAB_SUCCESS;
     
@@ -1258,7 +1286,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    continue;
 	}
 
-	if (cid != CRONID_USER) {
+	if (!(crongroups[cid].flags & CGF_USER)) {
 	    user = p;
 	    
 	    while (*p && !isws(*p))
@@ -1372,7 +1400,7 @@ crongroup_parse(int cid, int ifmod)
     struct stat st;
     int rc;
     
-    if (cdef->flags & CDF_DISABLED)
+    if (cdef->flags & CGF_DISABLED)
 	return CRONTAB_SUCCESS;
 
     if (fstatat(AT_FDCWD, cdef->dirname, &st, AT_SYMLINK_NOFOLLOW)) {
@@ -1411,7 +1439,7 @@ crongroup_parse(int cid, int ifmod)
 	crongroups[cid].dirfd = dirfd;
     }
     
-    if (cdef->flags & CDF_SINGLE) {
+    if (cdef->flags & CGF_SINGLE) {
 	rc = crontab_parse(cid, crongroups[cid].pattern, ifmod);
     } else {
 	DIR *dir;

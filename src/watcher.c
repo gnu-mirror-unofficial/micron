@@ -38,7 +38,7 @@ watcher_setup(int wd[])
     }
     
     for (i = 0; i < NCRONID; i++) {
-	if (crongroups[i].flags & CDF_DISABLED) {
+	if (crongroups[i].flags & CGF_DISABLED) {
 	    wd[i] = -1;
 	    continue;
 	}

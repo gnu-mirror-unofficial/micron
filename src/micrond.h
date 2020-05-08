@@ -94,9 +94,28 @@ enum {
     NCRONID
 };
 
-#define CDF_DEFAULT  0
-#define CDF_SINGLE   0x1
-#define CDF_DISABLED 0x2
+/* Crongroup flags */
+/*
+ * Default crongroup file: must be owned by root and may not be
+ * writable by anyone else, except root.
+ * File format includes username after the cron expression.
+ */
+#define CGF_DEFAULT  0
+/*
+ * A single cron file.  The rules are the same as for CGF_DEFAULT,
+ * except that the .pattern member of struct crongroup is treated as
+ * the file name.  Used to define main /etc/crontab.
+ */
+#define CGF_SINGLE   0x1
+/*
+ * Per-user crontabs.  Must be owned by the corresponding users
+ * (owner name same as the name of the file), and be writable only
+ * by these.  File format does not include username field.
+ */
+#define CGF_USER     0x2
+
+/* If this bit is set, the crongroup will not be used. */
+#define CGF_DISABLED 0x4
 
 struct crongroup {
     char const *id;
