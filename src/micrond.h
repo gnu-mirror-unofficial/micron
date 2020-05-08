@@ -77,8 +77,15 @@ timespec_cmp(struct timespec const *a, struct timespec const *b)
     return 0;
 }
 
-extern void (*micron_log)(int prio, char const *, ...)
+extern void (*micron_logger)(int prio, char const *, ...)
     ATTR_PRINTFLIKE(2,3);
+
+#define micron_log(pri, ...)			\
+    do {					\
+	if ((pri & 0x7) <= log_level) {		\
+	    micron_logger(pri, __VA_ARGS__);	\
+	}					\
+    } while(0)
 
 enum {
     CRONID_MASTER,
@@ -104,6 +111,7 @@ extern struct crongroup crongroups[];
 extern char *mailer_command;
 extern int syslog_enable;
 extern int syslog_facility;
+extern int log_level;
 
 enum {
     EXIT_OK,

@@ -25,6 +25,10 @@ AM_INIT_AUTOMAKE([1.15 foreign tar-ustar silent-rules])
 AM_SILENT_RULES([yes])
 # Checks for programs.
 AC_PROG_CC
+AC_PROG_CC_C99
+if test "$ac_cv_prog_cc_c99" = no; then
+  AC_MSG_ERROR([A C99 compiler is required])
+fi  
 AC_PROG_RANLIB
 AC_USE_SYSTEM_EXTENSIONS
 # Checks for libraries.

@@ -152,6 +152,10 @@ runner_start(struct cronjob *job)
     int pt_syslog = 0;
     char const *ep;
     
+    micron_log(LOG_DEBUG, "running \"%s\" on behalf of %lu.%lu",
+	       job->command, (unsigned long)job->uid,
+	       (unsigned long)job->gid);
+    
     env = cronjob_mkenv(job);
     if (!env) {
 	micron_log(LOG_ERR, "can't create environment");

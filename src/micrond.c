@@ -70,6 +70,7 @@ int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
 int syslog_enable;
 int syslog_facility = LOG_CRON;
+int log_level = LOG_INFO;
 
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
@@ -81,15 +82,18 @@ void
 stderr_log(int prio, char const *fmt, ...)
 {
     va_list ap;
+    char const *priname;
     va_start(ap, fmt);
     fprintf(stderr, "%s: ", progname);
+    if ((priname = micron_log_pri_to_str(prio & 0x7)) != NULL)
+	fprintf(stderr, "[%s] ", priname);
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
     fflush(stderr);
 }
 
-void (*micron_log)(int prio, char const *, ...) = stderr_log;
+void (*micron_logger)(int prio, char const *, ...) = stderr_log;
 
 int fatal_signals[] = {
     SIGHUP,
@@ -175,12 +179,20 @@ main(int argc, char **argv)
     else
 	progname = argv[0];
     
-    while ((c = getopt(argc, argv, "g:F:fNm:p:s")) != EOF) {
+    while ((c = getopt(argc, argv, "g:F:fNl:m:p:s")) != EOF) {
 	switch (c) {
 	case 'g':
 	    crongroup_option(optarg);
 	    break;
 
+	case 'l':
+	    log_level = micron_log_str_to_pri(optarg);
+	    if (log_level == -1) {
+		micron_logger(LOG_CRIT, "unrecognized log level: %s", optarg);
+		exit(EXIT_USAGE);
+	    }
+	    break;
+		
 	case 'm':
 	    mailer_command = optarg;
 	    break;
@@ -234,7 +246,7 @@ main(int argc, char **argv)
 	    exit(EXIT_FATAL);
 	}
 	micron_log_open(progname, LOG_CRON);
-	micron_log = micron_syslog;
+	micron_logger = micron_syslog;
     }
 
     umask(077);
@@ -1503,9 +1515,6 @@ cron_thr_main(void *ptr)
 	    for (cid = 0; cid < NCRONID; cid++)
 		crongroup_parse(cid, PARSE_IF_MODIFIED | PARSE_APPLY_NOW);
 	} else {
-	    micron_log(LOG_DEBUG, "Running \"%s\" on behalf of %lu.%lu",
-		       job->command, (unsigned long)job->uid,
-		       (unsigned long)job->gid);
 	    runner_enqueue(job);
 	}
 	cronjob_arm(job, 0);
