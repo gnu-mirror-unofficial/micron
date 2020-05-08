@@ -247,7 +247,8 @@ main(int argc, char **argv)
 	}
 	micron_log_open(progname, LOG_CRON);
 	micron_logger = micron_syslog;
-    }
+    } else if (syslog_enable)
+	micron_log_open(progname, LOG_CRON);
 
     umask(077);
     
