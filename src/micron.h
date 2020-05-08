@@ -31,7 +31,7 @@ enum {
     MICRON_DAY_DILLON
 };
 
-struct micronent {
+struct micronexp {
     char min[60];
     char hrs[24];
     char day[32];
@@ -40,10 +40,10 @@ struct micronent {
     int dsem;      /* Semantics of the dow and day fields */
 };
 
-int micron_parse(char const *spec, char **endp, struct micronent *ent);
+int micron_parse(char const *spec, char **endp, struct micronexp *exp);
 char const *micron_strerror(int ec);
-int micron_next(struct micronent const *ent, struct tm const *now,
+int micron_next(struct micronexp const *exp, struct tm const *now,
 		struct tm *next);
-int micron_next_time_from(struct micronent const *ent,
+int micron_next_time_from(struct micronexp const *exp,
 			  struct timespec *ts_from, struct timespec *ts);
-int micron_next_time(struct micronent const *ent, struct timespec *ts);
+int micron_next_time(struct micronexp const *exp, struct timespec *ts);

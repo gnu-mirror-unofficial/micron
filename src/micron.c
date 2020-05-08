@@ -168,27 +168,27 @@ micron_parse_field(char const *spec, char **endp, char *map, int len, int start,
 		      sizeof(fld)/sizeof((fld)[0]), start, xlat)
 
 int
-micron_parse_timespec(char const *spec, char **endp, struct micronent *ent)
+micron_parse_timespec(char const *spec, char **endp, struct micronexp *exp)
 {
     char *p;
     int rc;
 
-    rc = micron_parse_entry_field(spec, &p, ent->min, 0, NULL);
+    rc = micron_parse_entry_field(spec, &p, exp->min, 0, NULL);
     if (rc == 0) {
-	rc = micron_parse_entry_field(p, &p, ent->hrs, 0, NULL);
+	rc = micron_parse_entry_field(p, &p, exp->hrs, 0, NULL);
 	if (rc == 0) {
-	    rc = micron_parse_entry_field(p, &p, ent->day, 1, NULL);
+	    rc = micron_parse_entry_field(p, &p, exp->day, 1, NULL);
 	    if (rc == 0) {
-		rc = micron_parse_entry_field(p, &p, ent->mon, 1, mon_names);
+		rc = micron_parse_entry_field(p, &p, exp->mon, 1, mon_names);
 		if (rc == 0) {
-		    rc = micron_parse_entry_field(p, &p, ent->dow, 0,
+		    rc = micron_parse_entry_field(p, &p, exp->dow, 0,
 						  dow_names);
 		    if (rc == 0) {
-			if (ent->dow[7]) {
-			    ent->dow[0] = 1;
-			    ent->dow[7] = 0;
+			if (exp->dow[7]) {
+			    exp->dow[0] = 1;
+			    exp->dow[7] = 0;
 			}
-			ent->dsem = MICRON_DAY_STRICT;
+			exp->dsem = MICRON_DAY_STRICT;
 		    }
 		}
 	    }
@@ -218,7 +218,7 @@ static struct micron_equiv {
 };
 
 int
-micron_parse(char const *spec, char **endp, struct micronent *ent)
+micron_parse(char const *spec, char **endp, struct micronexp *ent)
 {
     while (*spec && isspace(*spec))
 	spec++;
@@ -363,7 +363,7 @@ next_minute(struct tm *tm)
 }
 
 int
-micron_next(struct micronent const *ent, struct tm const *now, struct tm *next)
+micron_next(struct micronexp const *ent, struct tm const *now, struct tm *next)
 {
     *next = *now;
     next->tm_sec = 0;
@@ -445,7 +445,7 @@ micron_next(struct micronent const *ent, struct tm const *now, struct tm *next)
 }
 
 int
-micron_next_time_from(struct micronent const *ent,
+micron_next_time_from(struct micronexp const *ent,
 		      struct timespec *ts_from, struct timespec *ts)
 {
     struct tm now, next;
@@ -469,7 +469,7 @@ micron_next_time_from(struct micronent const *ent,
 }
 
 int
-micron_next_time(struct micronent const *ent, struct timespec *ts)
+micron_next_time(struct micronexp const *ent, struct timespec *ts)
 {
     struct timespec ts_now;
 

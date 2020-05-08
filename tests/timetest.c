@@ -195,7 +195,7 @@ main(int argc, char **argv)
 {
     int i;
     int rc;
-    struct micronent ent;
+    struct micronexp ent;
     char *endp;
     int status = 0;
     int print = 0;

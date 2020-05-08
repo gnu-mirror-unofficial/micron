@@ -28,7 +28,7 @@ struct test_harness {
     char *spec;
     int status;
     int end;
-    struct micronent entry;
+    struct micronexp entry;
     int enable;
 } test[] = {
     { "* * * * *",
@@ -248,8 +248,8 @@ struct test_harness {
     { NULL }
 };
 
-static struct micronent *
-micronent_printable(struct micronent const *ent, struct micronent *res)
+static struct micronexp *
+micronexp_printable(struct micronexp const *ent, struct micronexp *res)
 {
     int i;
 #define PRT(f) \
@@ -289,11 +289,11 @@ print_header(int len)
 }
 
 static void
-micronent_display(struct micronent const *ent)
+micronexp_display(struct micronexp const *ent)
 {
-    struct micronent prt;
+    struct micronexp prt;
     
-    micronent_printable(ent, &prt);
+    micronexp_printable(ent, &prt);
     print_header(60);
     printf("%.60s\n", prt.min);
     printf("%.24s\n", prt.hrs);
@@ -303,7 +303,7 @@ micronent_display(struct micronent const *ent)
 }
 
 static int
-micronent_cmp(struct micronent const *a, struct micronent const *b)
+micronexp_cmp(struct micronexp const *a, struct micronexp const *b)
 {
     int rc;
     
@@ -328,7 +328,7 @@ main(int argc, char **argv)
 {
     int i;
     int rc;
-    struct micronent ent, prt;
+    struct micronexp ent, prt;
     char *endp;
     int status = 0;
     int print = 0;
@@ -352,7 +352,7 @@ main(int argc, char **argv)
 		return 1;
 	    }
 	    printf("Stopped at %s\n", endp);
-	    micronent_display(&ent);
+	    micronexp_display(&ent);
 	}
 	return 0;
     }
@@ -381,9 +381,9 @@ main(int argc, char **argv)
 	    status = 1;
 	} else if (rc != MICRON_E_OK) {
 	    printf("XFAIL\n");
-	} else if (micronent_cmp(micronent_printable(&ent, &prt), &test[i].entry)) {
+	} else if (micronexp_cmp(micronexp_printable(&ent, &prt), &test[i].entry)) {
 	    printf("FAIL\n");
-	    micronent_display(&ent);
+	    micronexp_display(&ent);
 	    status = 1;
 	} else
 	    printf("OK\n");

@@ -13,7 +13,7 @@ enum {
 
 struct cronjob {
     int type;                  /* Type of this job */
-    struct micronent schedule; /* Time schedule entry */
+    struct micronexp schedule; /* Time schedule expression */
     char *command;             /* Command to be run */
     uid_t uid;
     gid_t gid;

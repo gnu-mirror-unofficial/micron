@@ -621,7 +621,7 @@ cronjob_head_remove(int fileid)
 
 static struct cronjob *
 cronjob_alloc(int fileid, int type,
-	      struct micronent const *schedule,
+	      struct micronexp const *schedule,
 	      struct passwd const *pwd,
 	      char const *command, struct micron_environ *env)
 {
@@ -1084,7 +1084,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
     while (1) {
 	size_t len;
 	int type;
-	struct micronent schedule;
+	struct micronexp schedule;
 	char *p;
 	char *user = NULL;
 	int rc;
@@ -1269,7 +1269,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 void
 crontab_scanner_schedule(void)
 {
-    struct micronent schedule;
+    struct micronexp schedule;
     struct cronjob *cp;
     LIST_FOREACH(cp, &cronjob_head, list) {
 	if (cp->type == JOB_INTERNAL)
