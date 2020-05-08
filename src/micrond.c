@@ -925,7 +925,7 @@ crontab_check_file(int cid, char const *filename,
 	if (!no_safety_checking)
 	    return CRONTAB_FAILURE;
     }
-    if (st.st_mode & (S_IRWXG | S_IRWXO)) {
+    if (st.st_mode & (S_IWGRP | S_IWOTH)) {
 	micron_log(LOG_ERR, PRsCRONTAB ": unsafe permissions",
 		   ARGCRONTAB(cid, filename));
 	if (!no_safety_checking)
