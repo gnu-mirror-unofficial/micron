@@ -169,7 +169,6 @@ micron_syslog(int pri, char const *fmt, ...)
     va_end(ap);
 }
 
-
 static int
 reopen_logger(void)
 {
@@ -253,7 +252,7 @@ log_message_create(int prio, char const *msgtext, char const *tag, pid_t pid)
 {
     struct log_message *msg;
     char sbuf[MICRON_LOG_BUF_SIZE];
-    char tbuf[sizeof("May  8 11:42:27")];
+    char tbuf[sizeof("Jan  1 00:00:00")];
     char hostbuf[HOST_NAME_MAX];
     size_t len;
     struct timeval tv;

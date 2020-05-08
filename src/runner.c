@@ -239,32 +239,29 @@ runner_start(struct cronjob *job)
 	dup2(fd, 1);
 	dup2(1, 2);
 
-	/* Override the environment */
-	environ = env;
-
 	/* Switch to user privileges */
 	if (setgid(job->gid)) {
-	    micron_log(LOG_ERR, "setgid(%lu): %s",
-		       (unsigned long)job->gid, strerror(errno));
+	    fprintf(stderr, "setgid(%lu): %s",
+		    (unsigned long)job->gid, strerror(errno));
 	    _exit(127);
 	}
 
 	if (initgroups(env_get("LOGNAME", env), job->gid)) {
-	    micron_log(LOG_ERR, "initgroups(%s,%lu): %s",
-		       env_get("LOGNAME", env), (unsigned long)job->gid,
-		       strerror(errno));
+	    fprintf(stderr, "initgroups(%s,%lu): %s",
+		    env_get("LOGNAME", env), (unsigned long)job->gid,
+		    strerror(errno));
 	    _exit(127);
 	}
 
 	if (setuid(job->uid)) {
-	    micron_log(LOG_ERR, "setuid(%lu): %s",
-		       (unsigned long)job->uid, strerror(errno));
+	    fprintf(stderr, "setuid(%lu): %s",
+		    (unsigned long)job->uid, strerror(errno));
 	    _exit(127);
 	}
 
 	if (chdir(env_get("HOME", env))) {
-	    micron_log(LOG_ERR, "can't change to %s: %s",
-		       env_get("HOME", env), strerror(errno));
+	    fprintf(stderr, "can't change to %s: %s",
+		    env_get("HOME", env), strerror(errno));
 	    _exit(127);
 	}
 	    
@@ -324,14 +321,12 @@ mailer_start(struct proctab *pt, const char *mailto)
 	hostname[HOST_NAME_MAX] = 0;
 	
 	if (pipe(p)) {
-	    micron_log(LOG_ERR, "pipe: %s", strerror(errno));
 	    _exit(127);
 	}
 
 	pid = fork();
 
 	if (pid == -1) {
-	    micron_log(LOG_ERR, "child fork: %s", strerror(errno));
 	    _exit(127);
 	}
 
