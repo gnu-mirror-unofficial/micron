@@ -192,6 +192,29 @@ crongroup_option(char const *arg)
     exit(EXIT_USAGE);
 }   
 
+static void
+usage(void)
+{
+    printf("usage: %s [-Nfs] [-F FAC] [-g [no]group[=DIR]] [-l PRI] [-m MAILER] [-p DEV]\n", progname);
+    printf("A cron deamon\n");
+    printf("\nOPTIONS:\n\n");
+    printf("    -N              disable safety checking (for debugging only!)\n");
+    printf("    -f              remain in foreground\n");
+    printf("    -s              log output from cronjobs to syslog\n");
+    printf("    -F FACILITY     log cronjobs output to this facility (implies -s)\n");
+    printf("    -g GROUP=DIR    set directory or file name for crontab group GROUP\n");
+    printf("    -g [no]GROUP    enable or disable crontab group GROUP\n");
+    printf("    -l PRI          log only messages with syslog priority PRI or higher\n");
+    printf("    -m MAILER       set mailer command\n");
+    printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
+    printf("\n");
+    printf("Valid crontab groups are: master, system, and user\n\n");
+    printf("Syslog SOCKET can be either an absolute name of a UNIX socket or\n");
+    printf("a host name or IPv4 address optionally followed by a colon and port\n");
+    printf("number or service name.\n");
+    printf("\n");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -207,8 +230,12 @@ main(int argc, char **argv)
     else
 	progname = argv[0];
     
-    while ((c = getopt(argc, argv, "g:F:fNl:m:p:s")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:F:fNl:m:p:s")) != EOF) {
 	switch (c) {
+	case 'h':
+	    usage();
+	    exit(EXIT_OK);
+	    
 	case 'g':
 	    crongroup_option(optarg);
 	    break;
@@ -247,6 +274,7 @@ main(int argc, char **argv)
 		micron_log(LOG_CRIT, "unknown syslog facility %s", optarg);
 		exit(EXIT_USAGE);
 	    }
+	    syslog_enable = 1;
 	    break;
 	    
 	default:
@@ -784,7 +812,7 @@ crontab_find(int cid, char const *filename, int alloc)
     if (syslog_enable)
 	// Note: The following call won't update the ebuf value, since
 	// the environment is still empty.
-	micron_environ_set(&env, "SYSLOG",
+	micron_environ_set(&env, ENV_SYSLOG_EVENTS,
 			   micron_log_fac_to_str(syslog_facility));    
     LIST_HEAD_PUSH(&crontabs, cp, list);
     
@@ -1046,9 +1074,14 @@ copy_unquoted(char *dst, char const *src)
 static int
 check_var(char const *def)
 {
-    if (strncmp(def, "SYSLOG=", 7) == 0) {
-	def += 7;
-	if (strcasecmp(def, "off") == 0
+    static char syslog_var[] = ENV_SYSLOG_EVENTS;
+    static size_t syslog_var_len = sizeof(syslog_var_len)-1;
+    
+    if (strncmp(def, syslog_var, syslog_var_len) == 0
+	&& def[syslog_var_len] == '=') {
+	def += syslog_var_len + 1;
+	if (*def == 0
+	    || strcasecmp(def, "off") == 0
 	    || strcasecmp(def, "none") == 0
 	    || strcasecmp(def, "default") == 0
 	    || micron_log_str_to_fac(def) != -1)
@@ -1344,7 +1377,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    break;
 	}
 
-	ep = micron_environ_get(env, &cp->env_head, "JOB_ALLOW_MULTIPLE");
+	ep = micron_environ_get(env, &cp->env_head, ENV_JOB_ALLOW_MULTIPLE);
 	if (ep) {
 	    char *endp;
 	    unsigned long n;

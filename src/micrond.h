@@ -132,11 +132,20 @@ extern int syslog_enable;
 extern int syslog_facility;
 extern int log_level;
 
+/* Exit codes. */
 enum {
     EXIT_OK,
     EXIT_FATAL,
     EXIT_USAGE
 };
+
+/* Important environment variables */
+#define ENV_SYSLOG_EVENTS "SYSLOG_FACILITY"
+#define ENV_JOB_ALLOW_MULTIPLE "JOB_ALLOW_MULTIPLE"
+#define ENV_LOGNAME "LOGNAME"
+#define ENV_HOME "HOME"
+#define ENV_SHELL "SHELL"
+#define ENV_MAILTO "MAILTO"
 
 void crontab_deleted(int cid, char const *name);
 void crontab_updated(int cid, char const *name);

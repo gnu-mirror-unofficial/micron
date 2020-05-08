@@ -177,9 +177,10 @@ runner_start(struct cronjob *job)
 		   job->refcnt - 1);	
     }
     
-    ep = env_get("SYSLOG", env);
+    ep = env_get(ENV_SYSLOG_EVENTS, env);
     if (ep) {
-	if (strcasecmp(ep, "off") == 0 ||
+	if (*ep == 0 ||
+	    strcasecmp(ep, "off") == 0 ||
 	    strcasecmp(ep, "none") == 0)
 	    pt_syslog = 0;
 	else if (strcasecmp(ep, "default") == 0)
@@ -246,9 +247,9 @@ runner_start(struct cronjob *job)
 	    _exit(127);
 	}
 
-	if (initgroups(env_get("LOGNAME", env), job->gid)) {
+	if (initgroups(env_get(ENV_LOGNAME, env), job->gid)) {
 	    fprintf(stderr, "initgroups(%s,%lu): %s",
-		    env_get("LOGNAME", env), (unsigned long)job->gid,
+		    env_get(ENV_LOGNAME, env), (unsigned long)job->gid,
 		    strerror(errno));
 	    _exit(127);
 	}
@@ -259,9 +260,9 @@ runner_start(struct cronjob *job)
 	    _exit(127);
 	}
 
-	if (chdir(env_get("HOME", env))) {
+	if (chdir(env_get(ENV_HOME, env))) {
 	    fprintf(stderr, "can't change to %s: %s",
-		    env_get("HOME", env), strerror(errno));
+		    env_get(ENV_HOME, env), strerror(errno));
 	    _exit(127);
 	}
 	    
@@ -270,7 +271,7 @@ runner_start(struct cronjob *job)
 	    close(i);
 	}
 
-	shell = env_get("SHELL", env);
+	shell = env_get(ENV_SHELL, env);
 	execle(shell, shell, "-c", job->command, NULL, env);
 	fprintf(stderr, "execle failed: shell=%s, command=%s\n",
 		shell, job->command);
@@ -349,7 +350,7 @@ mailer_start(struct proctab *pt, const char *mailto)
 	signal(SIGALRM, SIG_DFL);
 	alarm(10);
 	
-	mailfrom = env_get("LOGNAME", pt->env);
+	mailfrom = env_get(ENV_LOGNAME, pt->env);
 	fprintf(out, "From: \"(Cron daemon)\" <%s@%s>\n",
 		mailfrom, hostname);
 	fprintf(out, "To: %s\n", mailto);
@@ -428,9 +429,9 @@ cron_thr_cleaner(void *ptr)
 
 	    /* See whether results should be mailed to anybody */
 	    if (!pt->syslog) {
-		char const *p = env_get("MAILTO", pt->env);
+		char const *p = env_get(ENV_MAILTO, pt->env);
 		if (!p)
-		    p = env_get("LOGNAME", pt->env);
+		    p = env_get(ENV_LOGNAME, pt->env);
 		if (*p != 0) {
 		    /* See if we have any output at all */
 		    off_t off = lseek(pt->fd, 0, SEEK_END);
