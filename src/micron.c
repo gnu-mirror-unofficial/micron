@@ -48,8 +48,9 @@ xlat_name(char const *xlat[], int n, char const *name, char const *allowed)
 }
 
 static int
-micron_parse_range(char const *spec, char **endp, char *map, int len, int start,
-		  char const **xlat)
+micron_parse_range(char const *spec, char **endp, char *map,
+		   int len, int start,
+		   char const **xlat)
 {
     int r_min, r_max, r_step;
     unsigned long n;
@@ -137,8 +138,9 @@ esynt:
 }
 
 static int
-micron_parse_field(char const *spec, char **endp, char *map, int len, int start,
-		  char const **xlat)
+micron_parse_field(char const *spec, char **endp, char *map,
+		   int len, int start,
+		   char const **xlat)
 {
     int rc;
     char *p;
@@ -161,11 +163,11 @@ micron_parse_field(char const *spec, char **endp, char *map, int len, int start,
     return rc;
 }
 
-#define micron_parse_entry_field(spec,endp,fld,start,xlat)		\
+#define PARSE_FIELD(spec,endp,fld,start,xlat)				\
     micron_parse_field(spec,						\
-		      endp,						\
-		      fld,						\
-		      sizeof(fld)/sizeof((fld)[0]), start, xlat)
+		       endp,						\
+		       fld,						\
+		       sizeof(fld)/sizeof((fld)[0]), start, xlat)
 
 int
 micron_parse_timespec(char const *spec, char **endp, struct micronexp *exp)
@@ -173,22 +175,28 @@ micron_parse_timespec(char const *spec, char **endp, struct micronexp *exp)
     char *p;
     int rc;
 
-    rc = micron_parse_entry_field(spec, &p, exp->min, 0, NULL);
+    if (exp->dsem < 0 || exp->dsem > MAX_MICRON_DAY)
+	return MICRON_E_BADDSEM;
+    
+    rc = PARSE_FIELD(spec, &p, exp->min, 0, NULL);
     if (rc == 0) {
-	rc = micron_parse_entry_field(p, &p, exp->hrs, 0, NULL);
+	rc = PARSE_FIELD(p, &p, exp->hrs, 0, NULL);
 	if (rc == 0) {
-	    rc = micron_parse_entry_field(p, &p, exp->day, 1, NULL);
+	    rc = micron_parse_field(p, &p, exp->day,
+				    exp->dsem == MICRON_DAY_DILLON
+				      ? 5
+				      : sizeof(exp->day)/sizeof(exp->day[0]),
+				    1,
+				    NULL);
 	    if (rc == 0) {
-		rc = micron_parse_entry_field(p, &p, exp->mon, 1, mon_names);
+		rc = PARSE_FIELD(p, &p, exp->mon, 1, mon_names);
 		if (rc == 0) {
-		    rc = micron_parse_entry_field(p, &p, exp->dow, 0,
-						  dow_names);
+		    rc = PARSE_FIELD(p, &p, exp->dow, 0, dow_names);
 		    if (rc == 0) {
 			if (exp->dow[7]) {
 			    exp->dow[0] = 1;
 			    exp->dow[7] = 0;
 			}
-			exp->dsem = MICRON_DAY_STRICT;
 		    }
 		}
 	    }
@@ -253,7 +261,8 @@ static char const *micron_error_str[] = {
     [MICRON_E_RANGE] = "value out of range",
     [MICRON_E_SYNT] = "syntax error",
     [MICRON_E_SYS] = "system error",
-    [MICRON_E_BADCRON] = "malformed crontab entry"
+    [MICRON_E_BADCRON] = "malformed crontab entry",
+    [MICRON_E_BADDSEM] = "bad day semantics"
 };
 
 char const *
@@ -263,6 +272,12 @@ micron_strerror(int ec)
 	return micron_error_str[ec];
     return "unknown error";
 }
+
+char const *micron_dsem_str[] = {
+    "strict",
+    "vixie",
+    "dillon"
+};
 
 static int
 julianday(struct tm *tm)

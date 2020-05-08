@@ -229,6 +229,7 @@ main(int argc, char **argv)
     if (print) {
 	for (i = optind; i < argc; i++) {
 	    printf("%s:\n", argv[i]);
+	    ent.dsem = MICRON_DAY_STRICT;
 	    rc = micron_parse(argv[i], &endp, &ent);
 	    if (rc) {
 		fprintf(stderr, "%s at %s\n", micron_strerror(rc), endp);
@@ -258,12 +259,13 @@ main(int argc, char **argv)
 	int j;
 	int pass;
 	struct tm start_time, end_time;
-	static char *typestr[] = { "strict", "vixie", "dillon" };
 	    
 	if (!test[i].enable)
 	    continue;
 	
-	printf("%02d %-6s %-24s ", i, typestr[test[i].dsem], test[i].spec);
+	printf("%02d %-6s %-24s ", i, micron_dsem_str[test[i].dsem],
+	       test[i].spec);
+	ent.dsem = MICRON_DAY_STRICT;
 	rc = micron_parse(test[i].spec, &endp, &ent);
 	if (rc) {
 	    printf("FAIL (parse failed: %s at %s)\n",

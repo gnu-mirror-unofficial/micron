@@ -15,13 +15,17 @@ struct cronjob {
     int type;                  /* Type of this job */
     struct micronexp schedule; /* Time schedule expression */
     char *command;             /* Command to be run */
-    uid_t uid;
-    gid_t gid;
-    struct micron_environ *env;
+    uid_t uid;                 /* Run as this UID */ 
+    gid_t gid;                 /* ... and GID */
+    unsigned allow_multiple;   /* Allow that many instances to run
+				  simultaneously */
+    struct micron_environ *env;/* Execution environment */ 
     struct timespec next_time; /* Next time this entry is to be run */
     struct list_head list;     /* Links to the next and prev crontab entries */
-    struct list_head runq;     /* Links to the next and prev runqueue entries */
+    struct list_head runq;     /* Links to the next and prev runqueue
+				  entries */
     int fileid;                /* Crontab identifier */
+    unsigned line;             /* Line in file where it is defined */
     unsigned refcnt;           /* Number of times this entry is referenced */
 };
 

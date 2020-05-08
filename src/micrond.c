@@ -459,7 +459,8 @@ micron_environ_free(struct micron_environ *ebuf)
  * Otherwise, return -1.
  */
 static int
-micron_environ_find(struct micron_environ *ebuf, char const *name, char ***ret)
+micron_environ_find(struct micron_environ const *ebuf, char const *name,
+		    char ***ret)
 {
     size_t len = strcspn(name, "=");
     size_t i;
@@ -540,10 +541,11 @@ micron_environ_copy(struct micron_environ *ebuf, size_t envc, char **env)
  * Return the value, or NULL if not found.
  */
 static char const *
-micron_environ_get(struct micron_environ *ebuf, struct list_head *head,
+micron_environ_get(struct micron_environ const *ebuf,
+		   struct list_head const *head,
 		   char const *name)
 {
-    struct micron_environ *envp;
+    struct micron_environ const *envp;
     
     LIST_FOREACH_FROM(envp, ebuf, head, link) {
 	char **pp;
@@ -628,7 +630,7 @@ cronjob_alloc(int fileid, int type,
     struct cronjob *job;
     size_t size = sizeof(*job) + strlen(command) + 1;
     
-    job = malloc(size);
+    job = calloc(1, size);
     if (job) {
 	memset(job, 0, size);
 	job->type = type;
@@ -1016,6 +1018,24 @@ is_reboot(char const *s, char **endp)
 }
 
 static int
+get_day_semantics(struct crontab const *cp)
+{
+    char const *str;
+    struct micron_environ const *env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
+
+    str = micron_environ_get(env, &cp->env_head, "CRON_DAY_SEMANTICS");
+    if (str) {
+	int i;
+	for (i = 0; i < MAX_MICRON_DAY; i++) {
+	    if (strcasecmp(str, micron_dsem_str[i]) == 0)
+		return i;
+	}
+	return -1;
+    }
+    return MICRON_DAY_STRICT;
+}
+
+static int
 crontab_parse(int cid, char const *filename, int ifmod)
 {
     int fd;
@@ -1087,6 +1107,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	struct micronexp schedule;
 	char *p;
 	char *user = NULL;
+	char const *ep;
 	int rc;
 	int name_len, val_start;
 	
@@ -1189,6 +1210,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	if (is_reboot(p, &p)) {
 	    type = JOB_REBOOT;
 	} else {
+	    schedule.dsem = get_day_semantics(cp);
 	    rc = micron_parse(p, &p, &schedule);
 	    if (rc) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: %s near %s",
@@ -1239,7 +1261,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	
 	/* Finalize environment */
 	env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
-
+	
 	if (!micron_environ_get(env, &cp->env_head, "HOME")) 
 	    micron_environ_set(&env, "HOME", pwd->pw_dir);
     
@@ -1259,6 +1281,19 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cid, filename), line);
 	    break;
+	}
+
+	ep = micron_environ_get(env, &cp->env_head, "JOB_ALLOW_MULTIPLE");
+	if (ep) {
+	    char *endp;
+	    unsigned long n;
+	    errno = 0;
+	    n = strtoul(ep, &endp, 2);
+	    if (errno || *endp) {
+		micron_log(LOG_ERR, PRsCRONTAB ":%u: unrecognized value",
+			   ARGCRONTAB(cid, filename), line);
+	    } else
+		job->allow_multiple = (int) n;
 	}
 	cronjob_arm(job, ifmod & PARSE_APPLY_NOW);
     }

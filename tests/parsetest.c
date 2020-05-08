@@ -328,7 +328,7 @@ main(int argc, char **argv)
 {
     int i;
     int rc;
-    struct micronexp ent, prt;
+    struct micronexp exp, prt;
     char *endp;
     int status = 0;
     int print = 0;
@@ -346,13 +346,13 @@ main(int argc, char **argv)
     if (print) {
 	for (i = optind; i < argc; i++) {
 	    printf("%s:\n", argv[i]);
-	    rc = micron_parse(argv[i], &endp, &ent);
+	    rc = micron_parse(argv[i], &endp, &exp);
 	    if (rc) {
 		printf("%s at %s\n", micron_strerror(rc), endp);
 		return 1;
 	    }
 	    printf("Stopped at %s\n", endp);
-	    micronexp_display(&ent);
+	    micronexp_display(&exp);
 	}
 	return 0;
     }
@@ -371,7 +371,8 @@ main(int argc, char **argv)
 	if (!test[i].enable)
 	    continue;
 	printf("%02d %-24s ", i, test[i].spec);
-	rc = micron_parse(test[i].spec, &endp, &ent);
+	exp.dsem = MICRON_DAY_STRICT;
+	rc = micron_parse(test[i].spec, &endp, &exp);
 	if (rc != test[i].status) {
 	    printf("FAIL (status %s)\n", micron_strerror(rc));
 	    status = 1;
@@ -381,9 +382,9 @@ main(int argc, char **argv)
 	    status = 1;
 	} else if (rc != MICRON_E_OK) {
 	    printf("XFAIL\n");
-	} else if (micronexp_cmp(micronexp_printable(&ent, &prt), &test[i].entry)) {
+	} else if (micronexp_cmp(micronexp_printable(&exp, &prt), &test[i].entry)) {
 	    printf("FAIL\n");
-	    micronexp_display(&ent);
+	    micronexp_display(&exp);
 	    status = 1;
 	} else
 	    printf("OK\n");

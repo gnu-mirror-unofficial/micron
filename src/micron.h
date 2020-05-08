@@ -22,13 +22,15 @@ enum {
     MICRON_E_RANGE,
     MICRON_E_SYNT,
     MICRON_E_SYS,
-    MICRON_E_BADCRON
+    MICRON_E_BADCRON,
+    MICRON_E_BADDSEM
 };
 
 enum {
     MICRON_DAY_STRICT,
     MICRON_DAY_VIXIE,
-    MICRON_DAY_DILLON
+    MICRON_DAY_DILLON,
+    MAX_MICRON_DAY
 };
 
 struct micronexp {
@@ -47,3 +49,5 @@ int micron_next(struct micronexp const *exp, struct tm const *now,
 int micron_next_time_from(struct micronexp const *exp,
 			  struct timespec *ts_from, struct timespec *ts);
 int micron_next_time(struct micronexp const *exp, struct timespec *ts);
+
+extern char const *micron_dsem_str[];

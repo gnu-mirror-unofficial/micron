@@ -83,6 +83,17 @@ proctab_lookup(pid_t pid)
     return NULL;
 }
 
+static struct proctab *
+proctab_lookup_job(struct cronjob *job)
+{
+    struct proctab *pt;
+    LIST_FOREACH(pt, &proctab_head, link) {
+	if (pt->job == job)
+	    return pt;
+    }
+    return NULL;
+}    
+
 static inline void
 proctab_remove(struct proctab *pt)
 {
@@ -131,6 +142,24 @@ runner_start(struct cronjob *job)
 	return;
     }
 
+    /* Check the eventual multiple use */
+    pt = proctab_lookup_job(job);
+    if (pt) {
+	if (!job->allow_multiple) {
+	    micron_log(LOG_ERR, 
+		       "won't start \"%s\": previous instance "
+		       "is still running (PID %lu)",
+		       job->command,
+		       (unsigned long)pt->pid);
+	    cronjob_unref(job);
+	    return;
+	}
+	micron_log(LOG_WARNING, 
+		   "starting \"%s\": %u instances already running",
+		   job->command,
+		   job->refcnt - 1);	
+    }
+    
     ep = env_get("SYSLOG", env);
     if (ep) {
 	if (strcasecmp(ep, "off") == 0 ||
