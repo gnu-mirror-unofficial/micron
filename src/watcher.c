@@ -26,29 +26,29 @@
 #include "micrond.h"
 
 static int
-watcher_setup(int wd[])
+watcher_setup(void)
 {
     int ifd;
-    int i;
+    struct crongroup *cgrp;
     
     ifd = inotify_init();
     if (ifd == -1) {
 	micron_log(LOG_ERR, "inotify_init: %s", strerror(errno));
 	return -1;
     }
-    
-    for (i = 0; i < NCRONID; i++) {
-	if (crongroups[i].flags & CGF_DISABLED) {
-	    wd[i] = -1;
+
+    LIST_FOREACH(cgrp, &crongroup_head, list) {
+	if (cgrp->flags & CGF_DISABLED) {
+	    cgrp->wd = -1;
 	    continue;
 	}
 
-	wd[i] = inotify_add_watch(ifd, crongroups[i].dirname,
-				  IN_DELETE | IN_CREATE | IN_CLOSE_WRITE |
-				  IN_MOVED_FROM | IN_MOVED_TO);
-	if (wd[i] == -1) {
+	cgrp->wd = inotify_add_watch(ifd, cgrp->dirname,
+				     IN_DELETE | IN_CREATE | IN_CLOSE_WRITE |
+				     IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB);
+	if (cgrp->wd == -1) {
 	    micron_log(LOG_ERR, "cannot set watch on %s: %s",
-		       crongroups[i].dirname,
+		       cgrp->dirname,
 		       strerror(errno));
 	    close(ifd);
 	    ifd = -1;
@@ -57,14 +57,21 @@ watcher_setup(int wd[])
     return ifd;
 }
 
-static void
-event_handler(struct inotify_event *ep, int wd[])
+static inline struct crongroup *
+crongroup_by_wd(int wd)
 {
-    int cid;
+    struct crongroup *cgrp;
 
-    for (cid = 0; cid < NCRONID; cid++)
-	if (wd[cid] == ep->wd)
-	    break;
+    LIST_FOREACH(cgrp, &crongroup_head, list)
+	if (cgrp->wd == wd)
+	    return cgrp;
+    return NULL;
+}
+
+static void
+event_handler(struct inotify_event *ep)
+{
+    struct crongroup *cgrp = crongroup_by_wd(ep->wd);
 
     if (ep->mask & IN_IGNORED)
 	/* nothing */ ;
@@ -72,7 +79,7 @@ event_handler(struct inotify_event *ep, int wd[])
 	micron_log(LOG_NOTICE, "event queue overflow");
     else if (ep->mask & IN_UNMOUNT)
 	/* FIXME? */ ;
-    else if (cid == NCRONID) {
+    else if (!cgrp) {
 	if (ep->name)
 	    micron_log(LOG_NOTICE, "unrecognized event %x for %s",
 		       ep->mask, ep->name);
@@ -80,17 +87,22 @@ event_handler(struct inotify_event *ep, int wd[])
 	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
     } else if (ep->mask & IN_CREATE) {
 	micron_log(LOG_DEBUG, "%s/%s created",
-		   crongroups[cid].dirname, ep->name);
+		   cgrp->dirname, ep->name);
+    } else if (ep->mask & IN_ATTRIB) {
+	if (ep->mask & IN_ISDIR)
+	    crongroup_chattr(cgrp);
+	else
+	    crontab_chattr(cgrp, ep->name);
     } else if (ep->mask & (IN_DELETE | IN_MOVED_FROM)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", 
-		   crongroups[cid].dirname, ep->name,
+		   cgrp->dirname, ep->name,
 		   ep->mask & IN_DELETE ? "deleted" : "moved out");
-	crontab_deleted(cid, ep->name);
+	crontab_deleted(cgrp, ep->name);
     } else if (ep->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", 
-		   crongroups[cid].dirname, ep->name,
+		   cgrp->dirname, ep->name,
 		   ep->mask & IN_MOVED_TO ? "moved to" : "written");
-	crontab_updated(cid, ep->name);
+	crontab_updated(cgrp, ep->name);
     } else {
 	if (ep->name)
 	    micron_log(LOG_NOTICE, "unrecognized event %x for %s",
@@ -104,7 +116,7 @@ static char buffer[4096];
 static int offset;
 
 int
-watcher_run(int ifd, int wd[])
+watcher_run(int ifd)
 {
     int n;
     int rdbytes;
@@ -137,7 +149,7 @@ watcher_run(int ifd, int wd[])
 	if (offset - n < size)
 	    break;
 
-	event_handler(ep, wd);
+	event_handler(ep);
 
 	n += size;
     }
@@ -152,10 +164,9 @@ void *
 cron_thr_watcher(void *ptr)
 {
     int ifd;
-    int wd[NCRONID];
     struct pollfd pfd;
     
-    ifd = watcher_setup(wd);
+    ifd = watcher_setup();
     if (ifd == -1)
 	return NULL;
 
@@ -170,7 +181,7 @@ cron_thr_watcher(void *ptr)
 	}
 	if (n == 1) {
 	    if (pfd.revents & POLLIN)
-		watcher_run(ifd, wd);
+		watcher_run(ifd);
 	}
     }
     close(ifd);

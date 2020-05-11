@@ -113,9 +113,19 @@ enum {
  * by these.  File format does not include username field.
  */
 #define CGF_USER     0x2
-
+/*
+ * User group crontabs.  Crontab files are stored in subdirectories
+ * named after the owner users.  The directory must be writable by
+ * this user and his primary group.  The crontab files in this directory
+ * must be owned by users who are members of the owner's primary group,
+ * which group must be also their owner group.  Write permission for group
+ * is allowed.
+ */
+#define CGF_GROUP    0x4
 /* If this bit is set, the crongroup will not be used. */
-#define CGF_DISABLED 0x4
+#define CGF_DISABLED 0x8
+/* Group is declared unsafe. */
+#define CGF_UNSAFE   0x10
 
 struct crongroup {
     char const *id;
@@ -124,9 +134,11 @@ struct crongroup {
     char *pattern;
     char const **exclude;
     int flags;
+    int wd;
+    struct list_head list;
 };
 
-extern struct crongroup crongroups[];
+extern struct list_head crongroup_head;
 extern char *mailer_command;
 extern int syslog_enable;
 extern int syslog_facility;
@@ -147,8 +159,13 @@ enum {
 #define ENV_SHELL "SHELL"
 #define ENV_MAILTO "MAILTO"
 
-void crontab_deleted(int cid, char const *name);
-void crontab_updated(int cid, char const *name);
+void crongroups_parse_all(int ifmod);
+
+void crontab_deleted(struct crongroup *cgrp, char const *name);
+void crontab_updated(struct crongroup *cgrp, char const *name);
+void crontab_chattr(struct crongroup *cgrp, char const *name);
+void crongroup_chattr(struct crongroup *cgrp);
+
 void *cron_thr_watcher(void *ptr);
 
 void crontab_scanner_schedule(void);

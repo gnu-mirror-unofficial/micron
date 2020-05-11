@@ -70,15 +70,26 @@ struct crongroup crongroups[] = {
 	.dirfd = -1,
 	.exclude = backup_file_table,
 	.flags = CGF_USER
+    },
+    {
+	.id = "group",
+	.dirname = "/var/spool/cron/groups",
+	.dirfd = -1,
+	.exclude = backup_file_table,
+	.flags = CGF_DISABLED
     }
 };
+
+struct list_head crongroup_head = LIST_HEAD_INITIALIZER(crongroup_head);
 
 /* Mode argument for crontab parsing founctions */
 enum {
     PARSE_ALWAYS      = 0x00, /* Always parse the file(s) */
     PARSE_IF_MODIFIED = 0x01, /* Parse the file only if mtime changed or
 				 if it is a new file */
-    PARSE_APPLY_NOW   = 0x02  /* Used together with any of the above means
+    PARSE_CHATTR      = 0x02, /* (Only for crongroups) Parse only if directory
+				 permissions changed to safe state. */
+    PARSE_APPLY_NOW   = 0x10  /* Used together with any of the above means
 				 that the changes must be applied to the
 				 current minute. */
 };
@@ -102,7 +113,9 @@ int log_level = LOG_INFO;
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
 
-int crongroup_parse(int cid, int ifmod);
+int crongroup_parse(struct crongroup *cgrp, int ifmod);
+void crongroup_forget_crontabs(struct crongroup *cgrp);
+
 void *cron_thr_main(void *);
 
 void
@@ -283,6 +296,7 @@ main(int argc, char **argv)
     }
 
     for (i = 0; i < NCRONID; i++) {
+	list_head_init(&crongroups[i].list);
 	if (crongroups[i].flags & CGF_DISABLED)
 	    continue;
 	if (!crongroups[i].dirname) {
@@ -294,6 +308,7 @@ main(int argc, char **argv)
 	    } else
 		crongroups[i].flags |= CGF_DISABLED;
 	}
+	LIST_HEAD_INSERT_LAST(&crongroup_head, &crongroups[i], list);
     }
 
     if (!foreground) {
@@ -307,9 +322,8 @@ main(int argc, char **argv)
 	micron_log_open(progname, LOG_CRON);
 
     umask(077);
-    
-    for (i = 0; i < NCRONID; i++)
-	crongroup_parse(i, PARSE_ALWAYS);
+
+    crongroups_parse_all(PARSE_ALWAYS);
 
     sigemptyset(&sigs);
 
@@ -776,7 +790,7 @@ cronjob_arm(struct cronjob *job, int apply_now)
 
 struct crontab {
     int fileid;
-    int cid;
+    struct crongroup *crongroup;
     char *filename;
     struct list_head list;
     time_t mtime;
@@ -787,13 +801,13 @@ static struct list_head crontabs = LIST_HEAD_INITIALIZER(crontabs);
 static int next_fileid;
 
 static struct crontab *
-crontab_find(int cid, char const *filename, int alloc)
+crontab_find(struct crongroup *cgrp, char const *filename, int alloc)
 {
     struct crontab *cp;
     struct micron_environ *env;
     
     LIST_FOREACH(cp, &crontabs, list) {
-	if (cp->cid == cid && strcmp(cp->filename, filename) == 0)
+	if (cp->crongroup == cgrp && strcmp(cp->filename, filename) == 0)
 	    return cp;
     }
 
@@ -803,7 +817,7 @@ crontab_find(int cid, char const *filename, int alloc)
     if (!cp)
 	nomem_exit();
     cp->fileid = next_fileid++;
-    cp->cid = cid;
+    cp->crongroup = cgrp;
     cp->filename = (char*)(cp + 1);
     strcpy(cp->filename, filename);
     cp->mtime = (time_t) -1;
@@ -853,11 +867,8 @@ cronjob_mkenv(struct cronjob *job)
     return NULL;
 }
 
-#define PRsCRONTAB "%s%s%s"
-#define ARGCRONTAB(cid, filename)\
-    crongroups[cid].dirname ? crongroups[cid].dirname : "", \
-    crongroups[cid].dirname ? "/" : "",		        \
-    filename
+#define PRsCRONTAB "%s/%s"
+#define ARGCRONTAB(cgr, filename) cgr->dirname, filename
 
 static inline int
 isws(int c)
@@ -945,27 +956,25 @@ priv_get_passwd(char const *username)
 }
 
 static int
-crontab_check_file(int cid, char const *filename,
-		   struct crontab **pcp, struct passwd **ppwd)
+crontab_stat(struct crongroup *cgrp, char const *filename, struct stat *pst,
+	     struct passwd **ppwd)
 {
     char const *username;
-    struct crontab *cp;
     struct passwd *pwd;
-    int rc;
     struct stat st;
     
-    if (fstatat(crongroups[cid].dirfd, filename, &st, AT_SYMLINK_NOFOLLOW)) {
+    if (fstatat(cgrp->dirfd, filename, &st, AT_SYMLINK_NOFOLLOW)) {
 	micron_log(LOG_ERR, "can't stat file " PRsCRONTAB ": %s",
-		   ARGCRONTAB(cid, filename),
+		   ARGCRONTAB(cgrp, filename),
 		   strerror(errno));
 	return CRONTAB_FAILURE;
     }
     if (!S_ISREG(st.st_mode)) {
 	micron_log(LOG_ERR, PRsCRONTAB ": not a regular file",
-		   ARGCRONTAB(cid, filename));
+		   ARGCRONTAB(cgrp, filename));
 	return CRONTAB_FAILURE;
     }
-    if (crongroups[cid].flags & CRONID_USER) {
+    if (cgrp->flags & CRONID_USER) {
 	username = filename;
     } else {
 	username = "root";
@@ -973,26 +982,43 @@ crontab_check_file(int cid, char const *filename,
     pwd = priv_get_passwd(username);
     if (!pwd) {
 	micron_log(LOG_ERR, PRsCRONTAB ": ignored; no such username",
-		   ARGCRONTAB(cid, filename));
+		   ARGCRONTAB(cgrp, filename));
 	return CRONTAB_FAILURE;
     }
     if (st.st_uid != pwd->pw_uid) {
 	micron_log(LOG_ERR, PRsCRONTAB " not owned by %s; ignored",
-		   ARGCRONTAB(cid, filename), username);
+		   ARGCRONTAB(cgrp, filename), username);
 	if (!no_safety_checking)
 	    return CRONTAB_FAILURE;
     }
     if (st.st_mode & (S_IWGRP | S_IWOTH)) {
 	micron_log(LOG_ERR, PRsCRONTAB ": unsafe permissions",
-		   ARGCRONTAB(cid, filename));
+		   ARGCRONTAB(cgrp, filename));
 	if (!no_safety_checking)
 	    return CRONTAB_FAILURE;
-    }
-
-    *ppwd = pwd;
+    }    
+    if (ppwd)
+	*ppwd = pwd;
+    if (pst)
+	*pst = st;
+    return CRONTAB_SUCCESS;
+}
+    
+static int
+crontab_check_file(struct crongroup *cgrp, char const *filename,
+		   struct crontab **pcp, struct passwd **ppwd)
+{
+    int rc;
+    struct stat st;
+    struct crontab *cp;
+    struct passwd *pwd;
+    
+    rc = crontab_stat(cgrp, filename, &st, &pwd);
+    if (rc != CRONTAB_SUCCESS)
+	return rc;
 
     rc = CRONTAB_SUCCESS;
-    cp = crontab_find(cid, filename, 1);
+    cp = crontab_find(cgrp, filename, 1);
     if (cp->mtime == (time_t) -1)
 	rc = CRONTAB_NEW;
     else if (cp->mtime < st.st_mtime)
@@ -1125,7 +1151,7 @@ get_day_semantics(struct crontab const *cp)
 }
 
 static int
-crontab_parse(int cid, char const *filename, int ifmod)
+crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 {
     int fd;
     struct crontab *cp;
@@ -1139,48 +1165,52 @@ crontab_parse(int cid, char const *filename, int ifmod)
     struct micron_environ *env;
     
     /* Do nothing if this crongroup is disabled */
-    if (crongroups[cid].flags & CGF_DISABLED)
+    if (cgrp->flags & (CGF_DISABLED | CGF_UNSAFE))
 	return CRONTAB_SUCCESS;
     /* Do nothing if we're not interested in this file */
-    if ((crongroups[cid].flags & CGF_SINGLE) &&
-	strcmp(crongroups[cid].pattern, filename))
+    if ((cgrp->flags & CGF_SINGLE) &&
+	strcmp(cgrp->pattern, filename))
 	return CRONTAB_SUCCESS;
     
-    switch (crontab_check_file(cid, filename, &cp, &pwd)) {
+    switch (crontab_check_file(cgrp, filename, &cp, &pwd)) {
     case CRONTAB_SUCCESS:
 	if (ifmod & PARSE_IF_MODIFIED)
 	    return CRONTAB_SUCCESS;
+	micron_log(LOG_INFO, "reading " PRsCRONTAB,
+		   ARGCRONTAB(cgrp, filename));
 	crontab_clear(cp, 1);
 	break;
 
     case CRONTAB_NEW:
+	micron_log(LOG_INFO, "reading " PRsCRONTAB,
+		   ARGCRONTAB(cgrp, filename));
 	break;
 	
     case CRONTAB_MODIFIED:
 	micron_log(LOG_INFO, "re-reading " PRsCRONTAB,
-		   ARGCRONTAB(cid, filename));
+		   ARGCRONTAB(cgrp, filename));
 	crontab_clear(cp, 1);
 	break;
 	
     case CRONTAB_FAILURE:
-	if ((cp = crontab_find(cid, filename, 0)) != NULL) {
+	if ((cp = crontab_find(cgrp, filename, 0)) != NULL) {
 	    crontab_forget(cp);
 	    return CRONTAB_MODIFIED;
 	}
 	return CRONTAB_FAILURE;
     }
 	
-    fd = openat(crongroups[cid].dirfd, filename, O_RDONLY);
+    fd = openat(cgrp->dirfd, filename, O_RDONLY);
     if (fd == -1) {
 	micron_log(LOG_ERR, "can't open file " PRsCRONTAB ": %s",
-		   ARGCRONTAB(cid, filename),
+		   ARGCRONTAB(cgrp, filename),
 		   strerror(errno));
 	return CRONTAB_FAILURE;
     }
     fp = fdopen(fd, "r");
     if (!fp) {
 	micron_log(LOG_ERR, "can't fdopen file " PRsCRONTAB ": %s",
-		   ARGCRONTAB(cid, filename),
+		   ARGCRONTAB(cgrp, filename),
 		   strerror(errno));
 	close(fd);
 	return CRONTAB_FAILURE;
@@ -1218,7 +1248,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    int c;
 	toolong:
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: line too long",
-		       ARGCRONTAB(cid, filename), line);
+		       ARGCRONTAB(cgrp, filename), line);
 	    off = 0;
 	    while ((c = fgetc(fp)) != EOF) {
 		if (c == '\n') {
@@ -1255,7 +1285,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    char *var = malloc(len+1);
 	    if (!var) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
-			   ARGCRONTAB(cid, filename), line);
+			   ARGCRONTAB(cgrp, filename), line);
 		break;
 	    }
 	    memcpy(var, p, name_len);
@@ -1268,7 +1298,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 		rc = copy_unquoted(var + name_len + 1, p);
 	    if (rc) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: syntax error",
-			   ARGCRONTAB(cid, filename), line);
+			   ARGCRONTAB(cgrp, filename), line);
 		free(var);
 		continue;
 	    }
@@ -1280,14 +1310,14 @@ crontab_parse(int cid, char const *filename, int ifmod)
 		}
 		if (micron_environ_set_var(&env, var)) {
 		    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
-			       ARGCRONTAB(cid, filename), line);
+			       ARGCRONTAB(cgrp, filename), line);
 		    free(var);
 		    break;
 		}
 	    } else {
 		micron_log(LOG_ERR,
 			   PRsCRONTAB ":%u: invalid builtin variable assignment",
-			   ARGCRONTAB(cid, filename), line);
+			   ARGCRONTAB(cgrp, filename), line);
 		free(var);
 	    }
 	    
@@ -1303,7 +1333,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    rc = micron_parse(p, &p, &schedule);
 	    if (rc) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: %s near %s",
-			   ARGCRONTAB(cid, filename), line,
+			   ARGCRONTAB(cgrp, filename), line,
 			   micron_strerror(rc), p);
 		continue;
 	    }
@@ -1315,11 +1345,11 @@ crontab_parse(int cid, char const *filename, int ifmod)
 
 	if (!*p) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: premature end of line",
-		       ARGCRONTAB(cid, filename), line);
+		       ARGCRONTAB(cgrp, filename), line);
 	    continue;
 	}
 
-	if (!(crongroups[cid].flags & CGF_USER)) {
+	if (!(cgrp->flags & CGF_USER)) {
 	    user = p;
 	    
 	    while (*p && !isws(*p))
@@ -1327,7 +1357,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 
 	    if (!*p) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: premature end of line",
-			   ARGCRONTAB(cid, filename), line);
+			   ARGCRONTAB(cgrp, filename), line);
 		continue;
 	    }
 
@@ -1336,7 +1366,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    pwd = priv_get_passwd(user);
 	    if (!pwd) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: no such user %s",
-			   ARGCRONTAB(cid, filename), line, user);
+			   ARGCRONTAB(cgrp, filename), line, user);
 		continue;
 	    }
 
@@ -1347,7 +1377,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	if (running && type == JOB_REBOOT) {
 	    /* Ignore @reboot entries when running */
 	    micron_log(LOG_DEBUG, PRsCRONTAB ":%u: ignoring @reboot",
-			   ARGCRONTAB(cid, filename), line);
+			   ARGCRONTAB(cgrp, filename), line);
 	    continue;
 	}
 	
@@ -1361,19 +1391,19 @@ crontab_parse(int cid, char const *filename, int ifmod)
     
 	if (micron_environ_set(&env, "LOGNAME", pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
-		       ARGCRONTAB(cid, filename), line);
+		       ARGCRONTAB(cgrp, filename), line);
 	    break;
 	}
 	if (micron_environ_set(&env, "USER", pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
-		       ARGCRONTAB(cid, filename), line);
+		       ARGCRONTAB(cgrp, filename), line);
 	    break;
 	}
 	    
 	job = cronjob_alloc(cp->fileid, type, &schedule, pwd, p, env);
 	if (!job) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
-		       ARGCRONTAB(cid, filename), line);
+		       ARGCRONTAB(cgrp, filename), line);
 	    break;
 	}
 
@@ -1385,7 +1415,7 @@ crontab_parse(int cid, char const *filename, int ifmod)
 	    n = strtoul(ep, &endp, 2);
 	    if (errno || *endp) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: unrecognized value",
-			   ARGCRONTAB(cid, filename), line);
+			   ARGCRONTAB(cgrp, filename), line);
 	    } else
 		job->allow_multiple = (int) n;
 	}
@@ -1393,6 +1423,16 @@ crontab_parse(int cid, char const *filename, int ifmod)
     }
     fclose(fp);
     return CRONTAB_MODIFIED;
+}
+
+void
+crongroups_parse_all(int ifmod)
+{
+    struct crongroup *cgrp;
+
+    micron_log(LOG_DEBUG, "rescanning crontabs");
+    LIST_FOREACH(cgrp, &crongroup_head, list)
+	crongroup_parse(cgrp, ifmod);
 }
 
 void
@@ -1426,59 +1466,67 @@ patmatch(char const **patterns, const char *name)
 }
 
 int
-crongroup_parse(int cid, int ifmod)
+crongroup_parse(struct crongroup *cgrp, int ifmod)
 {
-    struct crongroup const *cdef = &crongroups[cid];
     int dirfd;
     struct stat st;
     int rc;
     
-    if (cdef->flags & CGF_DISABLED)
+    if (cgrp->flags & CGF_DISABLED)
 	return CRONTAB_SUCCESS;
 
-    if (fstatat(AT_FDCWD, cdef->dirname, &st, AT_SYMLINK_NOFOLLOW)) {
+    if (fstatat(AT_FDCWD, cgrp->dirname, &st, AT_SYMLINK_NOFOLLOW)) {
 	micron_log(LOG_ERR, "can't stat file %s: %s",
-		   cdef->dirname,
+		   cgrp->dirname,
 		   strerror(errno));
 	return CRONTAB_FAILURE;
     }
-    if (st.st_uid != 0) {
-	micron_log(LOG_ERR, "%s not owned by root; ignored",
-		   cdef->dirname);
-	if (!no_safety_checking)
-	    return CRONTAB_FAILURE;
-    }
-    if (st.st_mode & S_IWOTH) {
-	micron_log(LOG_ERR, "%s: unsafe permissions",
-		   cdef->dirname);
-	if (!no_safety_checking)
-	    return CRONTAB_FAILURE;
-    }
     if (!S_ISDIR(st.st_mode)) {
-	micron_log(LOG_ERR, "%s: not a directory", cdef->dirname);
+	micron_log(LOG_ERR, "%s: not a directory", cgrp->dirname);
 	return CRONTAB_FAILURE;
     }
+    if (st.st_uid != 0) {
+	micron_log(LOG_ERR, "%s not owned by root; ignored", cgrp->dirname);
+	if (!no_safety_checking) {
+	    crongroup_forget_crontabs(cgrp);
+	    cgrp->flags |= CGF_UNSAFE;
+	    return CRONTAB_FAILURE;
+	}
+    }
+    if (st.st_mode & S_IWOTH) {
+	micron_log(LOG_ERR, "%s: unsafe permissions", cgrp->dirname);
+	if (!no_safety_checking) {
+	    crongroup_forget_crontabs(cgrp);
+	    cgrp->flags |= CGF_UNSAFE;
+	    return CRONTAB_FAILURE;
+	}
+    }
 
-    if (crongroups[cid].dirfd == -1) {
-	dirfd = openat(AT_FDCWD, cdef->dirname,
+    if (cgrp->flags & CGF_UNSAFE)
+	cgrp->flags &= ~CGF_UNSAFE;
+    else if (ifmod & PARSE_CHATTR)
+	return CRONTAB_SUCCESS;
+    
+    if (cgrp->dirfd == -1) {
+	dirfd = openat(AT_FDCWD, cgrp->dirname,
 		       O_RDONLY | O_NONBLOCK | O_DIRECTORY);
 	if (dirfd == -1) {
 	    micron_log(LOG_ERR, "can't open directory %s: %s",
-		       cdef->dirname,
+		       cgrp->dirname,
 		       strerror(errno));
 	    return CRONTAB_FAILURE;
 	}
 
-	crongroups[cid].dirfd = dirfd;
+	cgrp->dirfd = dirfd;
     }
     
-    if (cdef->flags & CGF_SINGLE) {
-	rc = crontab_parse(cid, crongroups[cid].pattern, ifmod);
+    if (cgrp->flags & CGF_SINGLE) {
+	rc = crontab_parse(cgrp, cgrp->pattern, ifmod);
     } else {
 	DIR *dir;
 	struct dirent *ent;
 	
-	dirfd = dup(crongroups[cid].dirfd);
+	dirfd = dup(cgrp->dirfd);
 	if (dirfd == -1) {
 	    micron_log(LOG_ERR, "dup: %s", strerror(errno));
 	    return CRONTAB_FAILURE;
@@ -1487,7 +1535,7 @@ crongroup_parse(int cid, int ifmod)
 	dir = fdopendir(dirfd);
 	if (!dir) {
 	    micron_log(LOG_ERR, "can't open directory %s: %s",
-		       cdef->dirname,
+		       cgrp->dirname,
 		       strerror(errno));
 	    close(dirfd);
 	    return CRONTAB_FAILURE;
@@ -1497,10 +1545,10 @@ crongroup_parse(int cid, int ifmod)
 	while ((ent = readdir(dir))) {
 	    if (strcmp(ent->d_name, ".") == 0 ||
 		strcmp(ent->d_name, "..") == 0 ||
-		(cdef->pattern && !fnmatch(cdef->pattern, ent->d_name, 0)) ||
-		patmatch(cdef->exclude, ent->d_name))
+		(cgrp->pattern && !fnmatch(cgrp->pattern, ent->d_name, 0)) ||
+		patmatch(cgrp->exclude, ent->d_name))
 		continue;
-	    if (crontab_parse(cid, ent->d_name, ifmod) != CRONTAB_SUCCESS)
+	    if (crontab_parse(cgrp, ent->d_name, ifmod) != CRONTAB_SUCCESS)
 		rc = CRONTAB_MODIFIED;
 	}
 	closedir(dir);
@@ -1509,9 +1557,19 @@ crongroup_parse(int cid, int ifmod)
 }
 
 void
-crontab_deleted(int cid, char const *name)
+crongroup_forget_crontabs(struct crongroup *cgrp)
 {
-    struct crontab *cp = crontab_find(cid, name, 1);
+    struct crontab *cp, *prev;
+    LIST_FOREACH_SAFE(cp, prev, &crontabs, list) {
+	if (cp->crongroup == cgrp)
+	    crontab_forget(cp);
+    }
+}
+
+void
+crontab_deleted(struct crongroup *cgrp, char const *name)
+{
+    struct crontab *cp = crontab_find(cgrp, name, 1);
     pthread_mutex_lock(&cronjob_mutex);
     cronjob_head_remove(cp->fileid);
     pthread_cond_broadcast(&cronjob_cond);
@@ -1519,14 +1577,51 @@ crontab_deleted(int cid, char const *name)
 }
 
 void
-crontab_updated(int cid, char const *name)
+crontab_updated(struct crongroup *cgrp, char const *name)
 {
     struct timespec ts;
     pthread_mutex_lock(&cronjob_mutex);
     clock_gettime(CLOCK_REALTIME, &ts);
-    crontab_parse(cid, name, PARSE_ALWAYS |
+    crontab_parse(cgrp, name, PARSE_ALWAYS |
 		             (ts.tv_sec == 0 ? PARSE_APPLY_NOW : 0));
     pthread_cond_broadcast(&cronjob_cond);
+    pthread_mutex_unlock(&cronjob_mutex);
+}
+
+void
+crontab_chattr(struct crongroup *cgrp, char const *name)
+{
+    int rc;
+    struct crontab *cp = crontab_find(cgrp, name, 0);
+
+    if (cgrp->flags & (CGF_DISABLED | CGF_UNSAFE))
+    micron_log(LOG_DEBUG, "crontab %s/%s changed attributes",
+	       cgrp->dirname, name);
+    if (no_safety_checking)
+	return;
+
+    pthread_mutex_lock(&cronjob_mutex);
+    rc = crontab_stat(cgrp, name, NULL, NULL);
+    if (rc == CRONTAB_SUCCESS) {
+	if (cp == NULL) {
+	    crontab_parse(cgrp, name, PARSE_ALWAYS);
+	    pthread_cond_broadcast(&cronjob_cond);
+	}
+    } else if (cp) {
+	micron_log(LOG_INFO, "unloading " PRsCRONTAB, ARGCRONTAB(cgrp, name));
+	crontab_forget(cp);
+	pthread_cond_broadcast(&cronjob_cond);
+    }
+    pthread_mutex_unlock(&cronjob_mutex);
+}
+
+void
+crongroup_chattr(struct crongroup *cgrp)
+{
+    micron_log(LOG_DEBUG, "crongroup %s changed attributes", cgrp->dirname);
+    pthread_mutex_lock(&cronjob_mutex);
+    if (crongroup_parse(cgrp, PARSE_CHATTR) == CRONTAB_MODIFIED)
+	pthread_cond_broadcast(&cronjob_cond);
     pthread_mutex_unlock(&cronjob_mutex);
 }
 
@@ -1576,11 +1671,7 @@ cron_thr_main(void *ptr)
 	LIST_REMOVE(job, list);
 
 	if (job->type == JOB_INTERNAL) {
-	    int cid;
-
-	    micron_log(LOG_DEBUG, "rescanning crontabs");
-	    for (cid = 0; cid < NCRONID; cid++)
-		crongroup_parse(cid, PARSE_IF_MODIFIED | PARSE_APPLY_NOW);
+	    crongroups_parse_all(PARSE_IF_MODIFIED | PARSE_APPLY_NOW);
 	} else {
 	    runner_enqueue(job);
 	}
