@@ -161,6 +161,15 @@ enum {
     EXIT_USAGE
 };
 
+/* Return values from crontab safety checking and parsing functions */
+enum {
+    CRONTAB_SUCCESS,
+    CRONTAB_NEW,
+    CRONTAB_MODIFIED,
+    CRONTAB_UNSAFE,
+    CRONTAB_FAILURE
+};
+
 /* Important environment variables */
 #define ENV_SYSLOG_EVENTS "SYSLOG_FACILITY"
 #define ENV_JOB_ALLOW_MULTIPLE "JOB_ALLOW_MULTIPLE"
@@ -176,17 +185,11 @@ void crontab_updated(struct crongroup *cgrp, char const *name);
 void crontab_chattr(struct crongroup *cgrp, char const *name);
 void crongroup_chattr(struct crongroup *cgrp);
 
-#ifdef WITH_INOTIFY
 void *cron_thr_watcher(void *ptr);
-int watcher_add(struct crongroup *cgrp);
-int watcher_remove(int wd);
-#else
-# define watcher_add(x)
-# define watcher_remove(x)
-#endif
 
 void crontab_scanner_schedule(void);
-int usercrongroup_add(struct crongroup *host, char const *name);
+int usercrongroup_add(struct crongroup *host, char const *name,
+		      struct crongroup **ret);
 void usercrongroup_delete(struct crongroup *host, char const *name);
 
 void *cron_thr_runner(void *ptr);

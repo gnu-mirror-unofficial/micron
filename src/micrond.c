@@ -72,7 +72,16 @@ struct crongroup crongroups[] = {
 	.dirfd = -1,
 	.exclude = backup_file_table,
     },
-    {
+    {   /*
+	 * The group crongroup contains personal user crontabs stored
+	 * in directories named after the user login name.  Each directory
+	 * is added to the crongroup_head as a separate crongroup of type
+	 * CGTYPE_GROUP and can contain multiple crontabs.  They can be
+	 * owned by different users the only requirement being that their
+	 * owner is a member of the primary group of the user in whose
+	 * directory they reside.  This provides a convenient way for
+	 * maintaining crontabs for certain services, e.g. httpd.
+	 */
 	.id = "group",
 	.type = CGTYPE_GROUPHOST,
 	.dirname = "/var/spool/cron/groups",
@@ -96,15 +105,6 @@ enum {
     PARSE_APPLY_NOW   = 0x10  /* Used together with any of the above means
 				 that the changes must be applied to the
 				 current minute. */
-};
-
-/* Return values from crontab safety checking and parsing functions */
-enum {
-    CRONTAB_SUCCESS,
-    CRONTAB_NEW,
-    CRONTAB_MODIFIED,
-    CRONTAB_UNSAFE,
-    CRONTAB_FAILURE
 };
 
 int foreground;
@@ -1604,7 +1604,8 @@ crongroup_check_group(struct crongroup *cgrp, struct stat *st)
 }
 
 int
-usercrongroup_add(struct crongroup *host, char const *name)
+usercrongroup_add(struct crongroup *host, char const *name,
+		  struct crongroup **ret_grp)
 {
     struct crongroup *cgrp;
     int rc;
@@ -1635,7 +1636,8 @@ usercrongroup_add(struct crongroup *host, char const *name)
     case CRONTAB_SUCCESS:
     case CRONTAB_MODIFIED:
 	LIST_HEAD_INSERT_LAST(&crongroup_head, cgrp, list);
-	watcher_add(cgrp);
+	if (ret_grp)
+	    *ret_grp = cgrp;
 	break;
 
     default:
@@ -1668,7 +1670,6 @@ usercrongroup_delete(struct crongroup *host, char const *name)
     cgrp = usercrongroup_find(host, name);
     if (cgrp) {
 	LIST_REMOVE(cgrp, list);
-	watcher_remove(cgrp->wd);
 	crongroup_forget_crontabs(cgrp);
 	free(cgrp);
     }
@@ -1768,12 +1769,12 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 		continue;
 
 	    if (cgrp->type == CGTYPE_GROUPHOST) {
-		if (usercrongroup_add(cgrp, ent->d_name) != CRONTAB_SUCCESS)
-		    rc = CRONTAB_MODIFIED;
+		rc = usercrongroup_add(cgrp, ent->d_name, NULL);
 	    } else {
-		if (crontab_parse(cgrp, ent->d_name, ifmod) != CRONTAB_SUCCESS)
-		    rc = CRONTAB_MODIFIED;
+		rc = crontab_parse(cgrp, ent->d_name, ifmod);
 	    }
+	    if (rc != CRONTAB_SUCCESS)
+		rc = CRONTAB_MODIFIED;
 	}
 	closedir(dir);
     }

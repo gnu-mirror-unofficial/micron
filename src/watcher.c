@@ -59,17 +59,9 @@ watcher_setup(void)
     return ifd;
 }
 
-int
+static int
 watcher_add(struct crongroup *cgrp)
 {
-    if (ifd == -1)
-	/*
-	 * FIXME: This function can be called early when the inotify subsystem
-	 * is not yet configured (from crongroup_parse at startup).  Ignore
-	 * this call, as watchers will be properly installed later, by
-	 * watcher_setup.
-	 */
-	return 0;
     cgrp->wd = inotify_add_watch(ifd, cgrp->dirname,
 				 IN_DELETE | IN_CREATE | IN_CLOSE_WRITE |
 				 IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB);
@@ -82,7 +74,7 @@ watcher_add(struct crongroup *cgrp)
     return 0;
 }
 
-int
+static inline int
 watcher_remove(int wd)
 {
     return inotify_rm_watch(ifd, wd);
@@ -118,8 +110,12 @@ event_handler(struct inotify_event *ep)
 	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
     } else if (ep->mask & IN_CREATE) {
 	micron_log(LOG_DEBUG, "%s/%s created", cgrp->dirname, ep->name);
-	if (cgrp->type == CGTYPE_GROUPHOST)
-	    usercrongroup_add(cgrp, ep->name);
+	if (cgrp->type == CGTYPE_GROUPHOST) {
+	    struct crongroup *newgrp;
+	    int rc = usercrongroup_add(cgrp, ep->name, &newgrp);
+	    if (rc == CRONTAB_SUCCESS || rc == CRONTAB_MODIFIED)
+		watcher_add(newgrp);
+	}
     } else if (ep->mask & IN_ATTRIB) {
 	if (ep->mask & IN_ISDIR)
 	    crongroup_chattr(cgrp);
@@ -128,17 +124,21 @@ event_handler(struct inotify_event *ep)
     } else if (ep->mask & (IN_DELETE | IN_MOVED_FROM)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", cgrp->dirname, ep->name,
 		   ep->mask & IN_DELETE ? "deleted" : "moved out");
-	if (cgrp->type == CGTYPE_GROUPHOST)
+	if (cgrp->type == CGTYPE_GROUPHOST) {
+	    watcher_remove(cgrp->wd);
 	    usercrongroup_delete(cgrp, ep->name);
-	else
+	} else
 	    crontab_deleted(cgrp, ep->name);
     } else if (ep->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", 
 		   cgrp->dirname, ep->name,
 		   ep->mask & IN_MOVED_TO ? "moved to" : "written");
-	if (cgrp->type == CGTYPE_GROUPHOST)
-	    usercrongroup_add(cgrp, ep->name);
-	else
+	if (cgrp->type == CGTYPE_GROUPHOST) {
+	    struct crongroup *newgrp;
+	    int rc = usercrongroup_add(cgrp, ep->name, &newgrp);
+	    if (rc == CRONTAB_SUCCESS || rc == CRONTAB_MODIFIED)
+		watcher_add(newgrp);	    
+	} else
 	    crontab_updated(cgrp, ep->name);
     } else {
 	if (ep->name)
