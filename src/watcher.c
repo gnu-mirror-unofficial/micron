@@ -25,6 +25,8 @@
 #include <syslog.h>
 #include "micrond.h"
 
+static int ifd = -1;
+
 static int
 watcher_setup(void)
 {
@@ -57,6 +59,35 @@ watcher_setup(void)
     return ifd;
 }
 
+int
+watcher_add(struct crongroup *cgrp)
+{
+    if (ifd == -1)
+	/*
+	 * FIXME: This function can be called early when the inotify subsystem
+	 * is not yet configured (from crongroup_parse at startup).  Ignore
+	 * this call, as watchers will be properly installed later, by
+	 * watcher_setup.
+	 */
+	return 0;
+    cgrp->wd = inotify_add_watch(ifd, cgrp->dirname,
+				 IN_DELETE | IN_CREATE | IN_CLOSE_WRITE |
+				 IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB);
+    if (cgrp->wd == -1) {
+	micron_log(LOG_ERR, "cannot set watch on %s: %s",
+		   cgrp->dirname,
+		   strerror(errno));
+	return -1;
+    }
+    return 0;
+}
+
+int
+watcher_remove(int wd)
+{
+    return inotify_rm_watch(ifd, wd);
+}
+
 static inline struct crongroup *
 crongroup_by_wd(int wd)
 {
@@ -86,23 +117,29 @@ event_handler(struct inotify_event *ep)
 	else
 	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
     } else if (ep->mask & IN_CREATE) {
-	micron_log(LOG_DEBUG, "%s/%s created",
-		   cgrp->dirname, ep->name);
+	micron_log(LOG_DEBUG, "%s/%s created", cgrp->dirname, ep->name);
+	if (cgrp->type == CGTYPE_GROUPHOST)
+	    usercrongroup_add(cgrp, ep->name);
     } else if (ep->mask & IN_ATTRIB) {
 	if (ep->mask & IN_ISDIR)
 	    crongroup_chattr(cgrp);
 	else
 	    crontab_chattr(cgrp, ep->name);
     } else if (ep->mask & (IN_DELETE | IN_MOVED_FROM)) {
-	micron_log(LOG_DEBUG, "%s/%s %s", 
-		   cgrp->dirname, ep->name,
+	micron_log(LOG_DEBUG, "%s/%s %s", cgrp->dirname, ep->name,
 		   ep->mask & IN_DELETE ? "deleted" : "moved out");
-	crontab_deleted(cgrp, ep->name);
+	if (cgrp->type == CGTYPE_GROUPHOST)
+	    usercrongroup_delete(cgrp, ep->name);
+	else
+	    crontab_deleted(cgrp, ep->name);
     } else if (ep->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
 	micron_log(LOG_DEBUG, "%s/%s %s", 
 		   cgrp->dirname, ep->name,
 		   ep->mask & IN_MOVED_TO ? "moved to" : "written");
-	crontab_updated(cgrp, ep->name);
+	if (cgrp->type == CGTYPE_GROUPHOST)
+	    usercrongroup_add(cgrp, ep->name);
+	else
+	    crontab_updated(cgrp, ep->name);
     } else {
 	if (ep->name)
 	    micron_log(LOG_NOTICE, "unrecognized event %x for %s",
@@ -116,7 +153,7 @@ static char buffer[4096];
 static int offset;
 
 int
-watcher_run(int ifd)
+watcher_run(void)
 {
     int n;
     int rdbytes;
@@ -163,7 +200,6 @@ watcher_run(int ifd)
 void *
 cron_thr_watcher(void *ptr)
 {
-    int ifd;
     struct pollfd pfd;
     
     ifd = watcher_setup();
@@ -181,7 +217,7 @@ cron_thr_watcher(void *ptr)
 	}
 	if (n == 1) {
 	    if (pfd.revents & POLLIN)
-		watcher_run(ifd);
+		watcher_run();
 	}
     }
     close(ifd);

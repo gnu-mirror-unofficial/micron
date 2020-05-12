@@ -26,6 +26,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <grp.h>
 #include <signal.h>
 #include <fnmatch.h>
 #include <pthread.h>
@@ -46,19 +47,19 @@ struct crongroup crongroups[] = {
 	 * name in main.
 	 */
 	.id = "master",
+	.type = CGTYPE_SINGLE,
 	.dirfd = -1,
 	.pattern = "/etc/crontab",
-	.flags = CGF_SINGLE
     },
     {   /*
 	 * The system crongroup comprises multiple files stored in
 	 * /etc/cron.d
 	 */
 	.id = "system",
+	.type = CGTYPE_DEFAULT,
 	.dirname = "/etc/cron.d",
 	.dirfd = -1,
 	.exclude = backup_file_table,
-	.flags = CGF_DEFAULT
     },
     {   /*
 	 * The user crongroup contains personal user crontabs.  The
@@ -66,19 +67,22 @@ struct crongroup crongroups[] = {
 	 * from the file name itself.
 	 */
 	.id = "user",
+	.type = CGTYPE_USER,
 	.dirname = "/var/spool/cron/crontabs",
 	.dirfd = -1,
 	.exclude = backup_file_table,
-	.flags = CGF_USER
     },
     {
 	.id = "group",
+	.type = CGTYPE_GROUPHOST,
 	.dirname = "/var/spool/cron/groups",
 	.dirfd = -1,
 	.exclude = backup_file_table,
 	.flags = CGF_DISABLED
     }
 };
+
+#define NCRONID (sizeof(crongroups)/sizeof(crongroups[0]))
 
 struct list_head crongroup_head = LIST_HEAD_INITIALIZER(crongroup_head);
 
@@ -99,6 +103,7 @@ enum {
     CRONTAB_SUCCESS,
     CRONTAB_NEW,
     CRONTAB_MODIFIED,
+    CRONTAB_UNSAFE,
     CRONTAB_FAILURE
 };
 
@@ -191,7 +196,7 @@ crongroup_option(char const *arg)
 		}
 		if (S_ISDIR(st.st_mode)) {
 		    crongroups[i].dirname = filename;
-		    if (i == CRONID_MASTER)
+		    if (crongroups[i].type == CGTYPE_SINGLE)
 			crongroups[i].pattern = "crontab";
 		} else
 		    crongroups[i].pattern = filename;
@@ -881,6 +886,7 @@ static pthread_once_t pwdbuf_key_once = PTHREAD_ONCE_INIT;
 
 struct pwdbuf {
     struct passwd pwd;
+    struct group grp;
     char *buf;
     size_t size;
 };
@@ -944,7 +950,7 @@ priv_get_pwdbuf(void)
 }
 
 static struct passwd *
-priv_get_passwd(char const *username)
+priv_getpwnam(char const *username)
 {
     struct passwd *pwd;
     struct pwdbuf *sb = priv_get_pwdbuf();
@@ -953,6 +959,30 @@ priv_get_passwd(char const *username)
 	    return NULL;
     }
     return pwd;
+}
+
+static struct passwd *
+priv_getpwuid(uid_t uid)
+{
+    struct passwd *pwd;
+    struct pwdbuf *sb = priv_get_pwdbuf();
+    while (getpwuid_r(uid, &sb->pwd, sb->buf, sb->size, &pwd) == ERANGE) {
+	if (!priv_expand_pwdbuf(sb))
+	    return NULL;
+    }
+    return pwd;
+}
+
+struct group *
+priv_getgrgid(gid_t gid)
+{
+    struct group *grp;
+    struct pwdbuf *sb = priv_get_pwdbuf();
+    while (getgrgid_r(gid, &sb->grp, sb->buf, sb->size, &grp) == ERANGE) {
+	if (!priv_expand_pwdbuf(sb))
+	    return NULL;
+    }
+    return grp;
 }
 
 static int
@@ -974,29 +1004,85 @@ crontab_stat(struct crongroup *cgrp, char const *filename, struct stat *pst,
 		   ARGCRONTAB(cgrp, filename));
 	return CRONTAB_FAILURE;
     }
-    if (cgrp->flags & CRONID_USER) {
+
+    switch (cgrp->type) {
+    case CGTYPE_USER:
 	username = filename;
-    } else {
+	break;
+	
+    case CGTYPE_GROUP:
+	pwd = priv_getpwuid(st.st_uid);
+	if (!pwd) {
+	    micron_log(LOG_ERR, PRsCRONTAB ": no user with uid %lu",
+		       ARGCRONTAB(cgrp, filename),
+		       (unsigned long)st.st_uid);
+	    return CRONTAB_FAILURE;
+	}
+	if (st.st_gid != cgrp->gid) {
+	    struct group *grp;
+	    int i;
+	    char *user;
+	    
+	    user = strdup(pwd->pw_name);
+	    if (!user) {
+		micron_log(LOG_ERR, "out of memory");
+		return CRONTAB_FAILURE;
+	    }
+	    grp = priv_getgrgid(cgrp->gid);
+	    if (!grp) {
+		micron_log(LOG_ERR,
+			   PRsCRONTAB ": can't get group of user %s: %s",
+			   ARGCRONTAB(cgrp, filename),
+			   cgrp->owner,
+			   strerror(errno));
+		free(user);
+		return CRONTAB_FAILURE;
+	    }
+	    for (i = 0; grp->gr_mem[i]; i++)
+		if (strcmp(grp->gr_mem[i], user) == 0)
+		    break;
+	    if (grp->gr_mem[i] == NULL) {
+		micron_log(LOG_ERR,
+			   PRsCRONTAB ": file owner %s is not member of "
+			   "the crontab owner group %s",
+			   ARGCRONTAB(cgrp, filename),
+			   user,
+			   grp->gr_name);
+		if (!no_safety_checking) {
+		    free(user);
+		    return CRONTAB_UNSAFE;
+		}
+	    }
+	    free(user);
+	}
+	username = cgrp->owner;
+	break;
+
+    default:
 	username = "root";
     }
-    pwd = priv_get_passwd(username);
+
+    pwd = priv_getpwnam(username);
     if (!pwd) {
-	micron_log(LOG_ERR, PRsCRONTAB ": ignored; no such username",
-		   ARGCRONTAB(cgrp, filename));
+	micron_log(LOG_ERR, PRsCRONTAB ": ignored; no such username: %s",
+		   ARGCRONTAB(cgrp, filename), username);
 	return CRONTAB_FAILURE;
     }
-    if (st.st_uid != pwd->pw_uid) {
-	micron_log(LOG_ERR, PRsCRONTAB " not owned by %s; ignored",
-		   ARGCRONTAB(cgrp, filename), username);
-	if (!no_safety_checking)
-	    return CRONTAB_FAILURE;
+
+    if (cgrp->type != CGTYPE_GROUP) {
+	if (st.st_uid != pwd->pw_uid) {
+	    micron_log(LOG_ERR, PRsCRONTAB " not owned by %s; ignored",
+		       ARGCRONTAB(cgrp, filename), username);
+	    if (!no_safety_checking)
+		return CRONTAB_UNSAFE;
+	}
+	if (st.st_mode & (S_IWGRP | S_IWOTH)) {
+	    micron_log(LOG_ERR, PRsCRONTAB ": unsafe permissions",
+		       ARGCRONTAB(cgrp, filename));
+	    if (!no_safety_checking)
+		return CRONTAB_UNSAFE;
+	}
     }
-    if (st.st_mode & (S_IWGRP | S_IWOTH)) {
-	micron_log(LOG_ERR, PRsCRONTAB ": unsafe permissions",
-		   ARGCRONTAB(cgrp, filename));
-	if (!no_safety_checking)
-	    return CRONTAB_FAILURE;
-    }    
     if (ppwd)
 	*ppwd = pwd;
     if (pst)
@@ -1011,9 +1097,8 @@ crontab_check_file(struct crongroup *cgrp, char const *filename,
     int rc;
     struct stat st;
     struct crontab *cp;
-    struct passwd *pwd;
     
-    rc = crontab_stat(cgrp, filename, &st, &pwd);
+    rc = crontab_stat(cgrp, filename, &st, ppwd);
     if (rc != CRONTAB_SUCCESS)
 	return rc;
 
@@ -1168,7 +1253,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
     if (cgrp->flags & (CGF_DISABLED | CGF_UNSAFE))
 	return CRONTAB_SUCCESS;
     /* Do nothing if we're not interested in this file */
-    if ((cgrp->flags & CGF_SINGLE) &&
+    if ((cgrp->type == CGTYPE_SINGLE) &&
 	strcmp(cgrp->pattern, filename))
 	return CRONTAB_SUCCESS;
     
@@ -1191,7 +1276,8 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 		   ARGCRONTAB(cgrp, filename));
 	crontab_clear(cp, 1);
 	break;
-	
+
+    case CRONTAB_UNSAFE:
     case CRONTAB_FAILURE:
 	if ((cp = crontab_find(cgrp, filename, 0)) != NULL) {
 	    crontab_forget(cp);
@@ -1349,7 +1435,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	    continue;
 	}
 
-	if (!(cgrp->flags & CGF_USER)) {
+	if (cgrp->type != CGTYPE_USER && cgrp->type != CGTYPE_GROUP) {
 	    user = p;
 	    
 	    while (*p && !isws(*p))
@@ -1363,7 +1449,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 
 	    *p++ = 0;
 
-	    pwd = priv_get_passwd(user);
+	    pwd = priv_getpwnam(user);
 	    if (!pwd) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: no such user %s",
 			   ARGCRONTAB(cgrp, filename), line, user);
@@ -1465,12 +1551,144 @@ patmatch(char const **patterns, const char *name)
     return 0;
 }
 
+static int
+crongroup_check_default(struct crongroup *cgrp, struct stat *st)
+{
+    if (st->st_uid != 0) {
+	micron_log(LOG_ERR, "%s not owned by root", cgrp->dirname);
+	return CRONTAB_UNSAFE;
+    }
+    if (st->st_mode & S_IWOTH) {
+	micron_log(LOG_ERR, "%s: unsafe permissions", cgrp->dirname);
+	return CRONTAB_UNSAFE;
+    }
+    return CRONTAB_SUCCESS;
+}
+
+static int
+crongroup_check_group(struct crongroup *cgrp, struct stat *st)
+{
+    char *name;
+    struct passwd *pwd;
+
+    name = strrchr(cgrp->dirname, '/');
+    if (!name)
+	return CRONTAB_FAILURE;
+    name++;
+    cgrp->owner = name;
+    
+    pwd = priv_getpwnam(name);
+    if (!pwd) {
+	micron_log(LOG_ERR, "%s: user group directory not named "
+		   "after existing user", cgrp->dirname);
+	return CRONTAB_FAILURE;
+    }
+    if (st->st_uid != pwd->pw_uid) {
+	micron_log(LOG_ERR, "%s not owned by %s", cgrp->dirname, name);
+	return CRONTAB_UNSAFE;
+    }
+    if (st->st_gid != pwd->pw_gid) {
+	micron_log(LOG_ERR, "%s: owner directory not same as the "
+		   "primary group of %s", cgrp->dirname, name);
+	return CRONTAB_UNSAFE;
+    }
+    
+    if (st->st_mode & S_IWOTH) {
+	micron_log(LOG_ERR, "%s: unsafe permissions", cgrp->dirname);
+	return CRONTAB_UNSAFE;
+    }
+
+    cgrp->gid = st->st_gid;
+    
+    return CRONTAB_SUCCESS;
+}
+
+int
+usercrongroup_add(struct crongroup *host, char const *name)
+{
+    struct crongroup *cgrp;
+    int rc;
+    char *dirname;
+
+    dirname = catfilename(host->dirname, name);
+    if (!dirname) {
+	micron_log(LOG_ERR, "out of memory");
+	return CRONTAB_FAILURE;
+    }
+    cgrp = calloc(1, sizeof(*cgrp));
+    if (!cgrp) {
+	micron_log(LOG_ERR, "out of memory");
+	free(dirname);
+	return CRONTAB_FAILURE;
+    }
+    cgrp->dirname = dirname;
+    cgrp->id = strrchr(cgrp->dirname, '/') + 1;
+    cgrp->type = CGTYPE_GROUP;
+    cgrp->dirfd = -1;
+    cgrp->pattern = "*";
+    cgrp->exclude = backup_file_table;
+    list_head_init(&cgrp->list);
+    
+    pthread_mutex_lock(&cronjob_mutex);
+    rc = crongroup_parse(cgrp, PARSE_ALWAYS);
+    switch (rc) {
+    case CRONTAB_SUCCESS:
+    case CRONTAB_MODIFIED:
+	LIST_HEAD_INSERT_LAST(&crongroup_head, cgrp, list);
+	watcher_add(cgrp);
+	break;
+
+    default:
+	free(cgrp);
+    }
+    pthread_mutex_unlock(&cronjob_mutex);
+    return rc;
+}
+
+static struct crongroup *
+usercrongroup_find(struct crongroup *host, char const *dirname)
+{
+    struct crongroup *cgrp;
+
+    LIST_FOREACH(cgrp, &crongroup_head, list)
+	if (cgrp->type == CGTYPE_GROUP &&
+	    /* FIXME: ?? cgrp->crongroup == host && */
+	    strcmp(cgrp->dirname, dirname) == 0)
+	    return cgrp;
+
+    return NULL;
+}
+
+void
+usercrongroup_delete(struct crongroup *host, char const *name)
+{
+    struct crongroup *cgrp;
+
+    pthread_mutex_lock(&cronjob_mutex);
+    cgrp = usercrongroup_find(host, name);
+    if (cgrp) {
+	LIST_REMOVE(cgrp, list);
+	watcher_remove(cgrp->wd);
+	crongroup_forget_crontabs(cgrp);
+	free(cgrp);
+    }
+    pthread_mutex_unlock(&cronjob_mutex);
+}
+
+static int (*crongroup_check[])(struct crongroup *, struct stat *) = {
+    [CGTYPE_DEFAULT] = crongroup_check_default,
+    [CGTYPE_SINGLE] = crongroup_check_default,
+    [CGTYPE_USER] = crongroup_check_default,
+    [CGTYPE_GROUPHOST] = crongroup_check_default,
+    [CGTYPE_GROUP] = crongroup_check_group,
+};
+
 int
 crongroup_parse(struct crongroup *cgrp, int ifmod)
 {
     int dirfd;
-    struct stat st;
     int rc;
+    struct stat st;
     
     if (cgrp->flags & CGF_DISABLED)
 	return CRONTAB_SUCCESS;
@@ -1485,28 +1703,28 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 	micron_log(LOG_ERR, "%s: not a directory", cgrp->dirname);
 	return CRONTAB_FAILURE;
     }
-    if (st.st_uid != 0) {
-	micron_log(LOG_ERR, "%s not owned by root; ignored", cgrp->dirname);
-	if (!no_safety_checking) {
-	    crongroup_forget_crontabs(cgrp);
-	    cgrp->flags |= CGF_UNSAFE;
-	    return CRONTAB_FAILURE;
-	}
-    }
-    if (st.st_mode & S_IWOTH) {
-	micron_log(LOG_ERR, "%s: unsafe permissions", cgrp->dirname);
-	if (!no_safety_checking) {
-	    crongroup_forget_crontabs(cgrp);
-	    cgrp->flags |= CGF_UNSAFE;
-	    return CRONTAB_FAILURE;
-	}
-    }
 
-    if (cgrp->flags & CGF_UNSAFE)
-	cgrp->flags &= ~CGF_UNSAFE;
-    else if (ifmod & PARSE_CHATTR)
-	return CRONTAB_SUCCESS;
-    
+    rc = crongroup_check[cgrp->type](cgrp, &st);
+    switch (rc) {
+    case CRONTAB_SUCCESS:
+	if (cgrp->flags & CGF_UNSAFE)
+	    cgrp->flags &= ~CGF_UNSAFE;
+	else if (ifmod & PARSE_CHATTR)
+	    return CRONTAB_SUCCESS;
+	break;
+
+    case CRONTAB_UNSAFE:
+	if (!no_safety_checking) {
+	    crongroup_forget_crontabs(cgrp);
+	    cgrp->flags |= CGF_UNSAFE;
+	    return CRONTAB_FAILURE;
+	}
+	break;
+
+    default:
+	return rc;
+    }
+	
     if (cgrp->dirfd == -1) {
 	dirfd = openat(AT_FDCWD, cgrp->dirname,
 		       O_RDONLY | O_NONBLOCK | O_DIRECTORY);
@@ -1520,7 +1738,7 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 	cgrp->dirfd = dirfd;
     }
     
-    if (cgrp->flags & CGF_SINGLE) {
+    if (cgrp->type == CGTYPE_SINGLE) {
 	rc = crontab_parse(cgrp, cgrp->pattern, ifmod);
     } else {
 	DIR *dir;
@@ -1548,8 +1766,14 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 		(cgrp->pattern && !fnmatch(cgrp->pattern, ent->d_name, 0)) ||
 		patmatch(cgrp->exclude, ent->d_name))
 		continue;
-	    if (crontab_parse(cgrp, ent->d_name, ifmod) != CRONTAB_SUCCESS)
-		rc = CRONTAB_MODIFIED;
+
+	    if (cgrp->type == CGTYPE_GROUPHOST) {
+		if (usercrongroup_add(cgrp, ent->d_name) != CRONTAB_SUCCESS)
+		    rc = CRONTAB_MODIFIED;
+	    } else {
+		if (crontab_parse(cgrp, ent->d_name, ifmod) != CRONTAB_SUCCESS)
+		    rc = CRONTAB_MODIFIED;
+	    }
 	}
 	closedir(dir);
     }

@@ -87,45 +87,52 @@ extern void (*micron_logger)(int prio, char const *, ...)
 	}					\
     } while(0)
 
+/* Crongroup types */
 enum {
-    CRONID_MASTER,
-    CRONID_SYSTEM,
-    CRONID_USER,
-    NCRONID
+    /*
+     * Default crongroup file: must be owned by root and may not be
+     * writable by anyone else, except root.
+     * File format includes username after the cron expression.
+     */
+    CGTYPE_DEFAULT,
+
+    /*
+     * A single cron file.  The rules are the same as for CGF_DEFAULT,
+     * except that the .pattern member of struct crongroup is treated as
+     * the file name.  Used to define main /etc/crontab.
+     */
+    CGTYPE_SINGLE,
+
+    /*
+     * Per-user crontabs.  Must be owned by the corresponding users
+     * (owner name same as the name of the file), and be writable only
+     * by these.  File format does not include username field.
+     */
+    CGTYPE_USER,
+
+    /*
+     * Storage directory for user crongroups.  This directory hosts
+     * subdirectories named after the owner users.  Ownership and attributes
+     * are the same as for CGF_DEFAULT.
+     */
+    CGTYPE_GROUPHOST,
+
+    /*
+     * User crongroup.  This directory is stored in the CGF_GROUPHOST
+     * crongroup.  It must be named after the user it belongs to and
+     * must be writable by this user and his primary group.  Crontabs in
+     * this directory must be owned by users who are members of the owner's
+     * primary group, which group must be also their owner group.
+     * Write permission for group is allowed.
+     */
+    CGTYPE_GROUP
 };
 
 /* Crongroup flags */
-/*
- * Default crongroup file: must be owned by root and may not be
- * writable by anyone else, except root.
- * File format includes username after the cron expression.
- */
-#define CGF_DEFAULT  0
-/*
- * A single cron file.  The rules are the same as for CGF_DEFAULT,
- * except that the .pattern member of struct crongroup is treated as
- * the file name.  Used to define main /etc/crontab.
- */
-#define CGF_SINGLE   0x1
-/*
- * Per-user crontabs.  Must be owned by the corresponding users
- * (owner name same as the name of the file), and be writable only
- * by these.  File format does not include username field.
- */
-#define CGF_USER     0x2
-/*
- * User group crontabs.  Crontab files are stored in subdirectories
- * named after the owner users.  The directory must be writable by
- * this user and his primary group.  The crontab files in this directory
- * must be owned by users who are members of the owner's primary group,
- * which group must be also their owner group.  Write permission for group
- * is allowed.
- */
-#define CGF_GROUP    0x4
 /* If this bit is set, the crongroup will not be used. */
-#define CGF_DISABLED 0x8
+#define CGF_DISABLED 0x1
 /* Group is declared unsafe. */
-#define CGF_UNSAFE   0x10
+#define CGF_UNSAFE   0x2
 
 struct crongroup {
     char const *id;
@@ -133,8 +140,11 @@ struct crongroup {
     int dirfd;
     char *pattern;
     char const **exclude;
+    int type;
     int flags;
     int wd;
+    char const *owner;
+    gid_t gid;
     struct list_head list;
 };
 
@@ -166,9 +176,18 @@ void crontab_updated(struct crongroup *cgrp, char const *name);
 void crontab_chattr(struct crongroup *cgrp, char const *name);
 void crongroup_chattr(struct crongroup *cgrp);
 
+#ifdef WITH_INOTIFY
 void *cron_thr_watcher(void *ptr);
+int watcher_add(struct crongroup *cgrp);
+int watcher_remove(int wd);
+#else
+# define watcher_add(x)
+# define watcher_remove(x)
+#endif
 
 void crontab_scanner_schedule(void);
+int usercrongroup_add(struct crongroup *host, char const *name);
+void usercrongroup_delete(struct crongroup *host, char const *name);
 
 void *cron_thr_runner(void *ptr);
 void *cron_thr_cleaner(void *ptr);
