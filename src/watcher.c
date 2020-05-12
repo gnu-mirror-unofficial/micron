@@ -91,11 +91,19 @@ crongroup_by_wd(int wd)
     return NULL;
 }
 
+static inline struct crongroup *
+crongroup_last(void)
+{
+    struct crongroup *cgrp;//FIXME
+    return LIST_LAST_ENTRY(&crongroup_head, cgrp, list);
+}
+
 static void
 event_handler(struct inotify_event *ep)
 {
     struct crongroup *cgrp = crongroup_by_wd(ep->wd);
-
+    int rescan = 0;
+    
     if (ep->mask & IN_IGNORED)
 	/* nothing */ ;
     else if (ep->mask & IN_Q_OVERFLOW)
@@ -111,13 +119,12 @@ event_handler(struct inotify_event *ep)
     } else if (ep->mask & IN_CREATE) {
 	micron_log(LOG_DEBUG, "%s/%s created", cgrp->dirname, ep->name);
 	if (cgrp->type == CGTYPE_GROUPHOST) {
-	    struct crongroup *newgrp;
-	    int rc = usercrongroup_add(cgrp, ep->name, &newgrp);
-	    if (rc == CRONTAB_SUCCESS || rc == CRONTAB_MODIFIED)
-		watcher_add(newgrp);
+	    rescan = 1;
+	    usercrongroup_add(cgrp, ep->name);
 	}
     } else if (ep->mask & IN_ATTRIB) {
-	if (ep->mask & IN_ISDIR)
+	rescan = 1;
+	if ((ep->mask & IN_ISDIR) && ep->name[0] == 0)
 	    crongroup_chattr(cgrp);
 	else
 	    crontab_chattr(cgrp, ep->name);
@@ -133,12 +140,10 @@ event_handler(struct inotify_event *ep)
 	micron_log(LOG_DEBUG, "%s/%s %s", 
 		   cgrp->dirname, ep->name,
 		   ep->mask & IN_MOVED_TO ? "moved to" : "written");
-	if (cgrp->type == CGTYPE_GROUPHOST) {
-	    struct crongroup *newgrp;
-	    int rc = usercrongroup_add(cgrp, ep->name, &newgrp);
-	    if (rc == CRONTAB_SUCCESS || rc == CRONTAB_MODIFIED)
-		watcher_add(newgrp);	    
-	} else
+	rescan = 1;
+	if (cgrp->type == CGTYPE_GROUPHOST)
+	    usercrongroup_add(cgrp, ep->name);
+	else
 	    crontab_updated(cgrp, ep->name);
     } else {
 	if (ep->name)
@@ -146,7 +151,12 @@ event_handler(struct inotify_event *ep)
 		       ep->mask, ep->name);
 	else
 	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
-    }	
+    }
+    if (rescan) {
+	LIST_FOREACH(cgrp, &crongroup_head, list)
+	    if (cgrp->wd <= 0)
+		watcher_add(cgrp);
+    }
 }
 
 static char buffer[4096];

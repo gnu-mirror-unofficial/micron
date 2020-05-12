@@ -188,8 +188,7 @@ void crongroup_chattr(struct crongroup *cgrp);
 void *cron_thr_watcher(void *ptr);
 
 void crontab_scanner_schedule(void);
-int usercrongroup_add(struct crongroup *host, char const *name,
-		      struct crongroup **ret);
+int usercrongroup_add(struct crongroup *host, char const *name);
 void usercrongroup_delete(struct crongroup *host, char const *name);
 
 void *cron_thr_runner(void *ptr);

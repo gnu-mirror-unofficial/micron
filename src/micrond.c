@@ -1011,6 +1011,12 @@ crontab_stat(struct crongroup *cgrp, char const *filename, struct stat *pst,
 	break;
 	
     case CGTYPE_GROUP:
+	if (st.st_gid != cgrp->gid) {
+	    micron_log(LOG_ERR, PRsCRONTAB ": wrong owner group",
+		       ARGCRONTAB(cgrp, filename));
+	    if (!no_safety_checking)
+		return CRONTAB_UNSAFE;
+	}
 	pwd = priv_getpwuid(st.st_uid);
 	if (!pwd) {
 	    micron_log(LOG_ERR, PRsCRONTAB ": no user with uid %lu",
@@ -1018,7 +1024,7 @@ crontab_stat(struct crongroup *cgrp, char const *filename, struct stat *pst,
 		       (unsigned long)st.st_uid);
 	    return CRONTAB_FAILURE;
 	}
-	if (st.st_gid != cgrp->gid) {
+	if (pwd->pw_gid != cgrp->gid) {
 	    struct group *grp;
 	    int i;
 	    char *user;
@@ -1514,11 +1520,21 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 void
 crongroups_parse_all(int ifmod)
 {
-    struct crongroup *cgrp;
+    struct crongroup *cgrp, *last;
 
     micron_log(LOG_DEBUG, "rescanning crontabs");
-    LIST_FOREACH(cgrp, &crongroup_head, list)
+    /*
+     * crongroup_parse below can add user crongroups to the end of the
+     * list.  During addition, the group is scanned.  To avoid rescanning
+     * it when the cgrp pointer arrives at it, we cut off after this list
+     * entry:
+     */
+    last = LIST_LAST_ENTRY(&crongroup_head, cgrp, list);
+    LIST_FOREACH(cgrp, &crongroup_head, list) {
 	crongroup_parse(cgrp, ifmod);
+	if (cgrp == last)
+	    break;
+    }
 }
 
 void
@@ -1603,9 +1619,8 @@ crongroup_check_group(struct crongroup *cgrp, struct stat *st)
     return CRONTAB_SUCCESS;
 }
 
-int
-usercrongroup_add(struct crongroup *host, char const *name,
-		  struct crongroup **ret_grp)
+static int
+usercrongroup_add_unlocked(struct crongroup *host, char const *name)
 {
     struct crongroup *cgrp;
     int rc;
@@ -1626,23 +1641,29 @@ usercrongroup_add(struct crongroup *host, char const *name,
     cgrp->id = strrchr(cgrp->dirname, '/') + 1;
     cgrp->type = CGTYPE_GROUP;
     cgrp->dirfd = -1;
-    cgrp->pattern = "*";
+    cgrp->pattern = NULL;
     cgrp->exclude = backup_file_table;
     list_head_init(&cgrp->list);
     
-    pthread_mutex_lock(&cronjob_mutex);
     rc = crongroup_parse(cgrp, PARSE_ALWAYS);
     switch (rc) {
     case CRONTAB_SUCCESS:
     case CRONTAB_MODIFIED:
 	LIST_HEAD_INSERT_LAST(&crongroup_head, cgrp, list);
-	if (ret_grp)
-	    *ret_grp = cgrp;
 	break;
 
     default:
 	free(cgrp);
     }
+    return rc;
+}
+
+int
+usercrongroup_add(struct crongroup *host, char const *name)
+{
+    int rc;
+    pthread_mutex_lock(&cronjob_mutex);
+    rc = usercrongroup_add_unlocked(host, name);
     pthread_mutex_unlock(&cronjob_mutex);
     return rc;
 }
@@ -1661,6 +1682,16 @@ usercrongroup_find(struct crongroup *host, char const *dirname)
     return NULL;
 }
 
+static void
+usercrongroup_delete_unlocked(struct crongroup *cgrp)
+{
+    LIST_REMOVE(cgrp, list);
+    crongroup_forget_crontabs(cgrp);
+    close(cgrp->dirfd);
+    free(cgrp->dirname);
+    free(cgrp);
+}
+
 void
 usercrongroup_delete(struct crongroup *host, char const *name)
 {
@@ -1669,9 +1700,7 @@ usercrongroup_delete(struct crongroup *host, char const *name)
     pthread_mutex_lock(&cronjob_mutex);
     cgrp = usercrongroup_find(host, name);
     if (cgrp) {
-	LIST_REMOVE(cgrp, list);
-	crongroup_forget_crontabs(cgrp);
-	free(cgrp);
+	usercrongroup_delete_unlocked(cgrp);
     }
     pthread_mutex_unlock(&cronjob_mutex);
 }
@@ -1694,6 +1723,8 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
     if (cgrp->flags & CGF_DISABLED)
 	return CRONTAB_SUCCESS;
 
+    micron_log(LOG_ERR, "scanning crongroup %s: %s", cgrp->id, cgrp->dirname);
+    
     if (fstatat(AT_FDCWD, cgrp->dirname, &st, AT_SYMLINK_NOFOLLOW)) {
 	micron_log(LOG_ERR, "can't stat file %s: %s",
 		   cgrp->dirname,
@@ -1716,8 +1747,8 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 
     case CRONTAB_UNSAFE:
 	if (!no_safety_checking) {
-	    crongroup_forget_crontabs(cgrp);
 	    cgrp->flags |= CGF_UNSAFE;
+	    crongroup_forget_crontabs(cgrp);
 	    return CRONTAB_FAILURE;
 	}
 	break;
@@ -1759,17 +1790,18 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 	    close(dirfd);
 	    return CRONTAB_FAILURE;
 	}
+	rewinddir(dir);
 
 	rc = CRONTAB_SUCCESS;
 	while ((ent = readdir(dir))) {
 	    if (strcmp(ent->d_name, ".") == 0 ||
 		strcmp(ent->d_name, "..") == 0 ||
-		(cgrp->pattern && !fnmatch(cgrp->pattern, ent->d_name, 0)) ||
+		(cgrp->pattern && fnmatch(cgrp->pattern, ent->d_name, 0)) ||
 		patmatch(cgrp->exclude, ent->d_name))
 		continue;
 
 	    if (cgrp->type == CGTYPE_GROUPHOST) {
-		rc = usercrongroup_add(cgrp, ent->d_name, NULL);
+		rc = usercrongroup_add_unlocked(cgrp, ent->d_name);
 	    } else {
 		rc = crontab_parse(cgrp, ent->d_name, ifmod);
 	    }
@@ -1784,10 +1816,19 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 void
 crongroup_forget_crontabs(struct crongroup *cgrp)
 {
-    struct crontab *cp, *prev;
-    LIST_FOREACH_SAFE(cp, prev, &crontabs, list) {
-	if (cp->crongroup == cgrp)
-	    crontab_forget(cp);
+    if (cgrp->type == CGTYPE_GROUPHOST) {
+	struct crongroup *prev;
+	LIST_FOREACH_SAFE(cgrp, prev, &crongroup_head, list) {
+	    if (cgrp->type == CGTYPE_GROUP)
+		usercrongroup_delete_unlocked(cgrp);
+	}
+    } else {
+	struct crontab *cp, *prev;
+    
+	LIST_FOREACH_SAFE(cp, prev, &crontabs, list) {
+	    if (cp->crongroup == cgrp)
+		crontab_forget(cp);
+	}
     }
 }
 
