@@ -91,13 +91,6 @@ crongroup_by_wd(int wd)
     return NULL;
 }
 
-static inline struct crongroup *
-crongroup_last(void)
-{
-    struct crongroup *cgrp;//FIXME
-    return LIST_LAST_ENTRY(&crongroup_head, cgrp, list);
-}
-
 static void
 event_handler(struct inotify_event *ep)
 {
