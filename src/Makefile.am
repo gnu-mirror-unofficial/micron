@@ -23,13 +23,23 @@ if COND_INOTIFY
  micrond_SOURCES += watcher.c
 endif
 
+bin_PROGRAMS=crontab
+crontab_SOURCES=crontab.c
+
 noinst_LIBRARIES = libmicron.a
 libmicron_a_SOURCES =\
  micron.c\
  micron.h\
  micron_log.c\
  micron_log.h\
+ tempfile.c\
  list.h
+
+noinst_HEADERS = defs.h
 
 LDADD = ./libmicron.a $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 AM_CPPFLAGS = $(PTHREAD_CFLAGS) 
+
+install-exec-hook:
+	-chown root:$(CRONTAB_GID) $(DESTDIR)$(bindir)/crontab && \
+	  chmod g+s $(DESTDIR)$(bindir)/crontab

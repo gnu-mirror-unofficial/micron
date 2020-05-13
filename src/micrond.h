@@ -18,6 +18,7 @@
 #include "micron.h"
 #include "micron_log.h"
 #include "list.h"
+#include "defs.h"
 
 #define MAXCRONTABLINE 1024
 
@@ -153,13 +154,6 @@ extern char *mailer_command;
 extern int syslog_enable;
 extern int syslog_facility;
 extern int log_level;
-
-/* Exit codes. */
-enum {
-    EXIT_OK,
-    EXIT_FATAL,
-    EXIT_USAGE
-};
 
 /* Return values from crontab safety checking and parsing functions */
 enum {

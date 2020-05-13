@@ -49,7 +49,7 @@ struct crongroup crongroups[] = {
 	.id = "master",
 	.type = CGTYPE_SINGLE,
 	.dirfd = -1,
-	.pattern = "/etc/crontab",
+	.pattern = MICRON_CRONTAB_MASTER,
     },
     {   /*
 	 * The system crongroup comprises multiple files stored in
@@ -57,7 +57,7 @@ struct crongroup crongroups[] = {
 	 */
 	.id = "system",
 	.type = CGTYPE_DEFAULT,
-	.dirname = "/etc/cron.d",
+	.dirname = MICRON_CRONDIR_SYSTEM,
 	.dirfd = -1,
 	.exclude = backup_file_table,
     },
@@ -68,7 +68,7 @@ struct crongroup crongroups[] = {
 	 */
 	.id = "user",
 	.type = CGTYPE_USER,
-	.dirname = "/var/spool/cron/crontabs",
+	.dirname = MICRON_CRONDIR_USER,
 	.dirfd = -1,
 	.exclude = backup_file_table,
     },
@@ -84,7 +84,7 @@ struct crongroup crongroups[] = {
 	 */
 	.id = "group",
 	.type = CGTYPE_GROUPHOST,
-	.dirname = "/var/spool/cron/groups",
+	.dirname = MICRON_CRONDIR_GROUP,
 	.dirfd = -1,
 	.exclude = backup_file_table,
 	.flags = CGF_DISABLED

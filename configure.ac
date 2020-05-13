@@ -70,6 +70,13 @@ if test $status_inotify = yes; then
 fi  
 AM_CONDITIONAL([COND_INOTIFY],[test $status_inotify = yes])
 
+AC_SUBST([CRONTAB_GID],[crontab])
+AC_ARG_WITH([crontab-gid],
+  [AC_HELP_STRING([--with-crontab-gid=GID],
+                 [use this GID as owner of the crontab binary and user and group crontab directories])],
+  [CRONTAB_GID=$withval],
+  [CRONTAB_GID=crontab])
+
 dnl # Initialize the test suite.
 dnl AC_CONFIG_TESTDIR(tests)
 dnl AC_CONFIG_FILES([tests/Makefile tests/atlocal tests/etc/Makefile])
