@@ -136,16 +136,21 @@ enum {
 #define CGF_UNSAFE   0x2
 
 struct crongroup {
-    char const *id;
-    char *dirname;
-    int dirfd;
-    char *pattern;
-    char const **exclude;
-    int type;
-    int flags;
-    int wd;
-    char const *owner;
-    gid_t gid;
+    char const *id;      /* Group ID. */
+    char *dirname;       /* Directory name. */
+    int dirfd;           /* Directory descriptor. */
+    char *pattern;       /* For CGTYPE_SINGLE - name of the file in
+			    dirname. For another types - a glob(7) pattern
+			    of files to look for in dirname.  NULL means
+			    "*".
+			 */
+    char const **exclude;/* Exclude patterns. */
+    int type;            /* Crongroup type (see CGTYPE_ constants above). */ 
+    int flags;           /* See CGF_ constants above. */
+    int wd;              /* Inotify(7) watch descriptor. */
+    /* The following two are used for CGTYPE_GROUP only */
+    char const *owner;   /* Owner of the group directory. */
+    gid_t gid;           /* Owner gid. */
     struct list_head list;
 };
 
