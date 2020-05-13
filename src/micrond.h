@@ -148,9 +148,14 @@ struct crongroup {
     int type;            /* Crongroup type (see CGTYPE_ constants above). */ 
     int flags;           /* See CGF_ constants above. */
     int wd;              /* Inotify(7) watch descriptor. */
-    /* The following two are used for CGTYPE_GROUP only */
-    char const *owner;   /* Owner of the group directory. */
-    gid_t gid;           /* Owner gid. */
+
+    /* Ownership and privileges */
+    char const *owner_name;
+    char const *owner_group;
+    gid_t owner_gid;     /* This is set only for CGTYPE_GROUP types */
+    int mode;
+    int mask;            /* For future use */
+    
     struct list_head list;
 };
 

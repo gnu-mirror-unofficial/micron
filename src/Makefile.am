@@ -38,7 +38,7 @@ libmicron_a_SOURCES =\
 noinst_HEADERS = defs.h
 
 LDADD = ./libmicron.a $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
-AM_CPPFLAGS = $(PTHREAD_CFLAGS) 
+AM_CPPFLAGS = $(PTHREAD_CFLAGS) -DCRONTAB_GID=\"$(CRONTAB_GID)\"
 
 install-exec-hook:
 	-chown root:$(CRONTAB_GID) $(DESTDIR)$(bindir)/crontab && \
