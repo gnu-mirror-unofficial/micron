@@ -37,5 +37,10 @@ enum {
 # define MICRON_EDITOR "vi"
 #endif
 
+extern char *progname;
+
 int create_temp_file(int dirfd, char *filename, size_t suflen, int isdir);
+void set_progname(char *arg0);
+void version(void);
+
 

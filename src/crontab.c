@@ -29,7 +29,6 @@
 #include <dirent.h>
 #include "defs.h"
 
-static char *progname;
 static char *crondirname;
 static int crondirfd;
 static char *crontabfile = NULL;
@@ -138,6 +137,8 @@ usage(int ex)
     fprintf(fp, "    -r              remove crontab\n");
     fprintf(fp, "    -g              operate on user cron group files\n");
     fprintf(fp, "    -u NAME         operate on crontab of user NAME\n");
+    fprintf(fp, "    -h              print this help text\n");
+    fprintf(fp, "    -v              print program version and exit\n");
     fprintf(fp, "\n");
     fprintf(fp, "If none of [-elr] options given, replaces the crontab with the"
 	    " content of FILE.\n");
@@ -152,13 +153,9 @@ main(int argc, char **argv)
     enum crontab_command command = C_INSTALL;
     struct passwd *pwd;
     
-    progname = strrchr(argv[0], '/');
-    if (progname)
-	progname++;
-    else
-	progname = argv[0];
+    set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "eghilru:")) != EOF) {
+    while ((c = getopt(argc, argv, "eghilru:v")) != EOF) {
 	switch (c) {
 	case 'e':
 	    command = C_EDIT;
@@ -187,6 +184,10 @@ main(int argc, char **argv)
 	case 'u':
 	    username = optarg;
 	    break;
+
+	case 'v':
+	    version();
+	    exit(EXIT_USAGE);
 	    
 	default:
 	    usage(EXIT_USAGE);

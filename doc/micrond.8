@@ -18,7 +18,7 @@
 micrond \- a minimal cron implementation
 .SH SYNOPSIS
 \fBmicrond\fR\
- [\fB\-fhs\fR]\
+ [\fB\-fhsv\fR]\
  [\fB\-F \fIFAC\fR]\
  [\fB\-g \fR[\fBno\fR]\fIGROUP\fR[\fB=\fIDIR\fR]]\
  [\fB\-l \fIPRI\fR]\
@@ -165,6 +165,9 @@ optionally followed by a colon and port number or service name.
 .B \-s
 Log output from cronjobs to syslog.  By default, the \fBcron\fR
 facility is used.  Use \fB\-F\fR to change it.
+.TP
+.B \-v
+Print program version, licensing information and exit.
 .SH SEE ALSO
 .BR crontab (1),
 .BR crontab (5).

@@ -128,7 +128,6 @@ enum {
 };
 
 int foreground;
-char *progname;
 int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
 int syslog_enable;
@@ -245,6 +244,8 @@ usage(void)
     printf("    -l PRI          log only messages with syslog priority PRI or higher\n");
     printf("    -m MAILER       set mailer command\n");
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
+    printf("    -h              print this help text\n");
+    printf("    -v              print program version and exit\n");
     printf("\n");
     printf("Valid crontab groups are: master, system, user, and group.\n\n");
     printf("Syslog SOCKET can be either an absolute name of a UNIX socket or\n");
@@ -262,13 +263,9 @@ main(int argc, char **argv)
     sigset_t sigs;
     pthread_t tid;
     
-    progname = strrchr(argv[0], '/');
-    if (progname)
-	progname++;
-    else
-	progname = argv[0];
+    set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:F:fNl:m:p:s")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:F:fNl:m:p:sv")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -314,6 +311,10 @@ main(int argc, char **argv)
 	    }
 	    syslog_enable = 1;
 	    break;
+
+	case 'v':
+	    version();
+	    exit(EXIT_OK);
 	    
 	default:
 	    exit(EXIT_USAGE);
