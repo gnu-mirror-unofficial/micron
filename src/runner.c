@@ -29,6 +29,7 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <limits.h>
 #include "micrond.h"
 
 static pthread_mutex_t runner_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -324,7 +325,7 @@ mailer_start(struct proctab *pt, const char *mailto)
 	char hostname[HOST_NAME_MAX+1];
 	char const *mailfrom;
 	
-	gethostname(hostname, HOST_NAME_MAX+1);
+	gethostname(hostname, sizeof(hostname));
 	hostname[HOST_NAME_MAX] = 0;
 	
 	if (pipe(p)) {

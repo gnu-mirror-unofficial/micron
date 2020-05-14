@@ -23,6 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/socket.h>
@@ -253,7 +254,7 @@ log_message_create(int prio, char const *msgtext, char const *tag, pid_t pid)
     struct log_message *msg;
     char sbuf[MICRON_LOG_BUF_SIZE];
     char tbuf[sizeof("Jan  1 00:00:00")];
-    char hostbuf[HOST_NAME_MAX];
+    char hostbuf[HOST_NAME_MAX+1];
     size_t len;
     struct timeval tv;
     struct tm tm;
@@ -268,7 +269,7 @@ log_message_create(int prio, char const *msgtext, char const *tag, pid_t pid)
 		 tag,
 		 (unsigned long)pid, msgtext);
     } else {
-	gethostname(hostbuf, HOST_NAME_MAX+1);
+	gethostname(hostbuf, sizeof(hostbuf));
 	snprintf(sbuf, sizeof(sbuf), "<%d>%s %s %s[%lu]: %s", 
 		 prio, 
 		 tbuf,

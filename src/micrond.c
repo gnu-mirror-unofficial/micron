@@ -34,7 +34,7 @@
 #include "micrond.h"
 
 static char const *backup_file_table[] = {
-    ".#*",
+    ".*",
     "*~",
     "#*#",
     NULL
@@ -1589,7 +1589,7 @@ patmatch(char const **patterns, const char *name)
 {
     int i;
     for (i = 0; patterns[i]; i++)
-	if (fnmatch(name, patterns[i], 0) == 0)
+	if (fnmatch(patterns[i], name, FNM_PATHNAME|FNM_PERIOD) == 0)
 	    return 1;
     return 0;
 }
@@ -1865,7 +1865,7 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
     if (cgrp->flags & CGF_DISABLED)
 	return CRONTAB_SUCCESS;
 
-    micron_log(LOG_ERR, "scanning crongroup %s: %s", cgrp->id, cgrp->dirname);
+    micron_log(LOG_DEBUG, "scanning crongroup %s: %s", cgrp->id, cgrp->dirname);
     
     if (fstatat(AT_FDCWD, cgrp->dirname, &st, AT_SYMLINK_NOFOLLOW)) {
 	micron_log(LOG_ERR, "can't stat file %s: %s",
@@ -1938,7 +1938,9 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 	while ((ent = readdir(dir))) {
 	    if (strcmp(ent->d_name, ".") == 0 ||
 		strcmp(ent->d_name, "..") == 0 ||
-		(cgrp->pattern && fnmatch(cgrp->pattern, ent->d_name, 0)) ||
+		(cgrp->pattern && 
+                 fnmatch(cgrp->pattern, ent->d_name, 
+                         FNM_PATHNAME|FNM_PERIOD)) ||
 		patmatch(cgrp->exclude, ent->d_name))
 		continue;
 
