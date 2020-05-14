@@ -181,6 +181,7 @@ enum {
 #define ENV_HOME "HOME"
 #define ENV_SHELL "SHELL"
 #define ENV_MAILTO "MAILTO"
+#define ENV_CRON_DAY_SEMANTICS "CRON_DAY_SEMANTICS"
 
 void crongroups_parse_all(int ifmod);
 

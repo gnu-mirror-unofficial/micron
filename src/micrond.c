@@ -246,7 +246,7 @@ usage(void)
     printf("    -m MAILER       set mailer command\n");
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
     printf("\n");
-    printf("Valid crontab groups are: master, system, and user\n\n");
+    printf("Valid crontab groups are: master, system, user, and group.\n\n");
     printf("Syslog SOCKET can be either an absolute name of a UNIX socket or\n");
     printf("a host name or IPv4 address optionally followed by a colon and port\n");
     printf("number or service name.\n");
@@ -716,13 +716,13 @@ micron_environ_build(struct micron_environ *micron_env, struct list_head *head)
     struct micron_environ *p;
     extern char **environ;
 
-    if (micron_environ_copy(&ebuf, SIZE_MAX, environ))
-	goto err;
-
     LIST_FOREACH_FROM(p, micron_env, head, link) {
 	if (micron_environ_copy(&ebuf, p->varc, p->varv))
 	    goto err;
     }
+
+    if (micron_environ_copy(&ebuf, SIZE_MAX, environ))
+	goto err;
 
     if (micron_environ_append_var(&ebuf, NULL))
 	goto err;
@@ -1255,7 +1255,7 @@ get_day_semantics(struct crontab const *cp)
     char const *str;
     struct micron_environ const *env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
 
-    str = micron_environ_get(env, &cp->env_head, "CRON_DAY_SEMANTICS");
+    str = micron_environ_get(env, &cp->env_head, ENV_CRON_DAY_SEMANTICS);
     if (str) {
 	int i;
 	for (i = 0; i < MAX_MICRON_DAY; i++) {

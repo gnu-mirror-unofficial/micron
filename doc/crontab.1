@@ -1,0 +1,126 @@
+.\" micron - a minimal cron implementation  -*- nroff -*-
+.\" Copyright (C) 2020 Sergey Poznyakoff
+.\"
+.\" Micron is free software; you can redistribute it and/or modify it
+.\" under the terms of the GNU General Public License as published by the
+.\" Free Software Foundation; either version 3 of the License, or (at your
+.\" option) any later version.
+.\"
+.\" Micron is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License along
+.\" with micron. If not, see <http://www.gnu.org/licenses/>. */
+.TH CRONTAB 1 "May 14, 2020" "CRONTAB" "General Commands Manual"
+.SH NAME
+crontab \- manipulate per-user and user-group crontabs 
+.SH SYNOPSIS
+\fBcrontab\fR\
+ [\fB\-i\fR]\
+ [\fB\-u \fINAME\fR]\
+ \fIFILE\fR
+.br
+\fBcrontab\fR\
+ [\fB\-eilr\fR]\
+ [\fB\-u \fINAME\fR]
+.br
+\fBcrontab\fR\
+ \fB\-g\
+ [\fB\-u \fINAME\fR]\
+ [\fB\-eilr\fR]\
+ \fIFILE\fR
+.br
+\fBcrontab\fR \fB\-h\fR
+.SH DESCRIPTION
+Allows the user to list, edit or remove personal or group crontabs.
+.PP
+The \fBmicrond\fR(8) cron daemon reads crontabs from several crontab
+groups, two of which contain crontabs for particular system users.
+The \fBuser crongroup\fR contains per-user crontabs, and the \fBgroup
+crongroup\fR contains user crontabs editable by a group of users (see
+the
+.BR micrond (8)
+manual page for details).  By default, \fBcrontab\fR operates on
+per-user crontabs.  To edit group crontabs, the \fB\-g\fR option must
+be specifed.
+.PP
+When run without arguments, \fBcrontab\fR enters \fIcopy mode\fR, in
+which it copies the content of the supplied \fIFILE\fR to the user
+personal crontab, overwriting its prior content.
+.PP
+To list the content of the crontab, use the \fB\-l\fR option.  It will
+be displayed on standard output.
+.PP
+To edit it, run \fBcrontab\fR with the \fB\-e\fR option.  A temporary
+copy of the crontab will be created and loaded to the editor specified
+by the \fBVISUAL\fR environment variable.  If it is unset, the
+\fBEDITOR\fR variable is consulted.  If this variable is unset, the
+built-in setting (\fBvi\fR) will be used.
+.PP
+Once you quit the editor, the edited crontab will be atomically moved to
+your personal crontab, which will be re-read by \fBmicrond\fR.
+.PP
+The \fB\-r\fR option removes the crontab.
+.PP
+The super-user can address the crontab of a particular user by
+supplying the user's login name with the \fB\-u\fR option.  The use of
+this option is restricted for super-user, except if used together with
+the \fB\-g\fR option (see below).
+.PP
+When using destructive operations (such as copying or removal), it is
+safer to use the \fB\-i\fR optionm which instructs the program to ask
+for the user consent before undertaking the modification.
+.PP
+User crontab groups contain multiple files for each system user.  They
+are useful for certain pseudo-accounts.  For example, a site running
+multiple web services may need to install separate crontabs for each
+of them and to allow users who run these services to edit their
+crontabs.  This is done using the \fB\-g\fR option.  The name of the
+account for which the crontab is edited is supplied with the \fB\-u\fR
+option.  For example, to edit a crontab ``portal'' in account
+``www-data'', one would use:
+.PP
+    crontab -g -u www-data -e portal
+.PP    
+The use of group crontabs for account \fIX\fR is allowed only for
+users who are members of the primary group of \fIX\fR.
+.SH OPTIONS
+.TP
+.B \-e
+Edit crontab.
+.TP
+.B \-i
+Interactively ask before removing or replacing.
+.TP
+.B \-l
+List crontab.
+.TP
+.B \-r
+Remove crontab.
+.TP
+.B \-g
+Operate on user cron group files.
+.TP
+\fB\-u \fINAME\fR
+Operate on crontab of user \fINAME\fR.
+.SH SEE ALSO
+.BR micrond (8),
+.BR crontab (5).
+.SH COPYRIGHT
+Copyright \(co 2020 Sergey Poznyakoff <gray@gnu.org>
+.br
+.na
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+.br
+.ad
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+.\" Local variables:
+.\" eval: (add-hook 'write-file-hooks 'time-stamp)
+.\" time-stamp-start: ".TH [A-Z_][A-Z0-9_.\\-]* [0-9] \""
+.\" time-stamp-format: "%:B %:d, %:y"
+.\" time-stamp-end: "\""
+.\" time-stamp-line-limit: 20
+.\" end:

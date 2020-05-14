@@ -1,0 +1,320 @@
+.\" micron - a minimal cron implementation  -*- nroff -*-
+.\" Copyright (C) 2020 Sergey Poznyakoff
+.\"
+.\" Micron is free software; you can redistribute it and/or modify it
+.\" under the terms of the GNU General Public License as published by the
+.\" Free Software Foundation; either version 3 of the License, or (at your
+.\" option) any later version.
+.\"
+.\" Micron is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License along
+.\" with micron. If not, see <http://www.gnu.org/licenses/>. */
+.TH CRONTAB 5 "May 14, 2020" "CRONTAB" "File Formats Manual"
+.SH NAME
+crontab \- tables for driving micrond
+.SH DESCRIPTION
+Crontabs used by
+.BR micrond (8)
+are mostly compatible with Vixie crontabs.  The leading and trailing
+whitespace is ignored.  Comments are introduced by a hash sign (#)
+appearing as the first non-whitespace character in a line.  Comment
+lines and empty lines are ignored.  Very long lines can be split
+across several physical line using backslash as continuation
+character.  Total length of a valid crontab line after removing
+continuation characters cannot exceed 1024 characters.
+.PP
+Each crontab line is either a variable setting or a cron command.
+.SS Cron commands
+A cron command defines a command to run, a user on behalf of which it
+will be run, and a running schedule.
+.PP
+The fields are delimited by arbitrary amount of whitespace.
+.PP
+A cron command begins with a cron expression, which defines a time
+schedule.  This expression consists of five fields in this order:
+.IP
+.ta 1.5i
+field	allowed values
+.br
+-----	--------------
+.br
+minute	0-59
+.br
+hour	0-23
+.br
+day of month	1-31
+.br
+month	1-12 (or names, see below)
+.br
+day of week	0-7 (0 or 7 is Sun, or use names)
+.br
+.PP
+A field may contain a single asterisk (\fB*\fR), which stands for
+``each time unit''.  For example, it means ``each minute'' when used
+in the first field, ``each hour'' in second one, and so on.  Asterisk
+can be followed by a slash and a decimal number, which defines step
+within the interval.  E.g. \fB*/2\fR in second field stands for ``each
+second hour''.
+.PP
+The field may also be a comma-delimited list of the following
+constructs:
+.TP
+.I N
+A single number.  E.g. 2 in first field means ``second minute of an
+hour''.
+.I I-J
+Two numbers delimited by a dash define a range.  E.g 2-5 in first
+field is ``minutes 2,3,4,and 5 (inclusive)''.  The order is
+important.  For example, the following schedule:
+.br
+    55-5 * * * *
+.br
+means ``minutes 55 through 59 and 0 through 5 of the next hour''.
+.I I-J/N
+Same as above, but with step of N units, e.g.:
+.br
+    10-25/5 * * * *
+.br
+which stands for ``minutes 10,15,20,25''.
+.PP
+Names can be used in ``month'' and ``day of week'' fields.  Day and
+week names are abbreviated to their first three characters,
+case-insensitive.  Ranges or lists of names are allowed as well.
+.PP
+The day of a command's execution can be specified by two fields 
+day of month, and day of week.  Their exact meaning depends on the
+selected
+.IR "day field semantics" .
+There are three cases:
+.TP
+.I Strict semantics
+The command will be run only when both fields match the current time.
+For example,
+.br
+    30 4 1,15 * 5
+.br
+means to run the command at 4:30 am each Friday between the 1st and
+15th of each month.
+.br
+This is the default for \fBmicrond\fR.
+.TP
+.I Vixie semantics
+The command will be run when either field matches the current time.
+Thus, the previous example would cause a command to be run at 4:30 am
+on the 1st and 15th of each month, plus every Friday.
+.TP
+.I Dillon semantics
+If both day in the month and a day of week are supplied, the former
+must be integer numbers in range 1-5.  The meaning is Nth such weekday
+in the month.  For example, to run the date comment at 11 am on the
+second and third Monday, Tuesday and Wednesday of each month:
+.br
+    0 11 2,3 * mon-wed date
+.br    
+To request the last Monday, etc. in a month, ask for the "5th" one.
+This will always match the last Monday, etc., even if there are only
+four Mondays in the month: 
+.br
+    0 11 1,5 * mon-wed date
+.br
+When the fourth Monday in a month is the last, it will match against
+both 4 and 5, but will only run once if both are specified.
+.PP
+The semantics to use is selected by setting the
+.B CRON_DAY_SEMANTICS
+variable to one of the following values:
+.BR strict ,
+.BR vixie ,
+.BR dillon 
+(case-insensitive).
+.PP
+Instead of the first five fields, the following macro-definitions can
+be used:
+.IP
+.ta 1.5i
+string	meaning
+.br
+------	-------
+.br
+@reboot	Run once, at \fBmicrond\fR startup.
+.br
+@yearly	Run once a year, "0 0 1 1 *".
+.br
+@annually	(same as @yearly)
+.br
+@monthly	Run once a month, "0 0 1 * *".
+.br
+@weekly	Run once a week, "0 0 * * 0".
+.br
+@daily	Run once a day, "0 0 * * *".
+.br
+@midnight	(same as @daily)
+.br
+@hourly	Run once an hour, "0 * * * *".
+.br
+.PP
+In master crontab (\fB/etc/crontab\fR) and system crontabs (located in
+\fB/etc/cron.d\fR), the cron expression is followed by the user field,
+which holds a login name of the user on whose behalf the command will
+be run.
+.PP
+This field is absent in user personal crontabs, since these are always
+run on behalf of user that owns them,
+.PP
+The rest of line is taken as a shell command to be run when the time
+matches the schedule.  Before running the command, \fBmicrond\fR
+changes the directory to the home directory of the user for whom the
+command is run, modifies the environment as defined by variable
+settings (see below) and runs the command using the shell defined by
+the \fBSHELL\fR variable (\fB/bin/sh\fR by default).
+.SS Variable settings
+Variable settings modify execution environment for subsequent cron
+commands.   Some variables are internal to \fBmicrond\fR and modify
+its behavior.  A variable setting has the form
+.PP
+   \fIname\fR = \fIvalue\fR
+.PP
+where \fIname\fR is the variable name and \fIvalue\fR is the value to
+be assigned to it.  Notice several important differences from the
+similar construct in shell.  First of all, optional whitespace is
+allowed at both sides of the equals sign.  Secondly, the value is
+assigned verbatim, after removing the trailing and leading whitespace.
+You don't need to quote it even if it contains embedded whitespace.
+The only case when quoting becomes necessary is if you wish to
+preserve leading or trailing whitespace.  In this case both single and
+double quotes can be used, the only requirement being that both quotes
+match.  Inside a quoted string, a backslash character can be used to
+escape a quote character or another backslash.  To define an empty
+variable, use a pair of quotes or an empty string.  
+.PP
+Finally, notice that the value is always taken verbatim.  No
+expansions or substitutions take place.  If you need this kind of
+functionality, move environment manipulations to a shell script and
+invoke it from the cron command.
+.PP
+A variable setting applies to all cron commands that follow it, until
+another setting overwrites it or end of file is encountered.
+.PP
+The following variables modify the behavior of \fBmicrond\fR itself.
+.TP
+.B MAILTO
+Defines an email address or a comma-delimited list of email addresses.
+If any of the cron commands that follow this setting produces anything on
+its standard output or standard error, the output will be collected
+and mailed to the users listed in the \fBMAILTO\fR variable.  If the
+variable is undefined, the output will be sent to the owner of the
+crontab.  If \fBMAILTO\fR is set to an empty string, no mail will be sent.
+.TP
+.B SYSLOG_FACILITY
+If this variable is set to a meaningful syslog facility, the program
+output will be logged to that facility (priority \fBINFO\fR), instead
+of mailing it the usual way.
+.br
+Possible values for this variable are
+.BR auth ,
+.BR authpriv ,
+.BR cron ,
+.BR daemon ,
+.BR ftp ,
+.BR lpr ,
+.BR mail ,
+.BR news ,
+.BR syslog ,
+.BR user ,
+.BR uucp ,
+and
+.B local0
+through
+.BR local7. 
+.br
+The value
+.B default
+means to use the default syslog facility (\fBcron\fR), and
+.B off
+or
+.B none
+disable syslog and revert to mailing the program output as directed by
+the \fBMAILTO\fR variable.
+.TP
+.B JOB_ALLOW_MULTIPLE
+An integer value defining how many copies of a cron job can be running
+simultaneously.  Default is 0, i.e. \fBmicrond\fR will refuse to start
+a job if its previous run has not yet terminated.
+.TP
+.B CRON_DAY_SEMANTICS
+Defines the day semantics assumed in this crontab.  Allowed values are:
+.BR strict ,
+.BR vixie ,
+and
+.BR dillon .
+The default is
+.BR strict .
+See the discussion of day semantics in the subsection
+.B "Cron commands"
+for a detailed description.
+.TP
+.B HOME
+Defines the working directory from which the subsequent commands will
+be run.  Defaults to the home directory of the user on whose behalf
+the command is run.
+.TP
+.B SHELL
+Defines the shell used to start commands.  Defaults to
+.BR /bin/sh .
+.SH EXTENSIONS
+This section lists the differences of the \fBmicrond\fR crontabs over
+these of Vixie and Dillon crons.
+.nr step 1 1
+.IP \n[step].
+The semantics of the two day fields is configurable.  The default
+\fBstrict\fR semantics differs from both implementations.
+.IP \n+[step].
+Variable assignments can appear anyplace in the crontab.  The modified
+environment remains in effect for all subsequent commands until
+changed by another assignment or the end of file is reached, whichever
+happens first.  For example, the output of the following two example
+entries is mailed to two different users:
+.sp
+    MAILTO=one
+    * * * * * command one
+    MAILTO=two
+    * * * * * command two
+.IP \n+[step].
+Job output can be logged to syslog, instead of mailing it to the
+user.  This can happen both globally (see the \fB\-s\fR option to
+\fBmicrond\fR), or individually in a crontab (see the
+\fBSYSLOG_FACILITY\fR) variable.
+.IP \n+[step].
+Number of simultaneous instances of a single cron job is limited.
+It is configurable using the \fBJOB_ALLOW_MULTIPLE\fR variable.
+This differs both from Vixie implementation, where a job is started no
+matter how many of its instances are running, and from Dillon's cron,
+which refuses to start a job until its prior instance has terminated.
+.IP \n+[step].
+Dillon's cron implements optional job dependencies and frequences.
+These are not implemented in \fBmicrond\fR.
+.SH SEE ALSO
+.BR micrond (8),
+.BR crontab (1).
+.SH AUTHORS
+Sergey Poznyakoff <gray@gnu.org>.  This manual page uses examples from
+manpages for cron implementations by Paul Vixie <paul@vix.com> and
+Matthew Dillon <dillon@apollo.backplane.com>.
+.br
+.na
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+.br
+.ad
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+.\" Local variables:
+.\" eval: (add-hook 'write-file-hooks 'time-stamp)
+.\" time-stamp-start: ".TH [A-Z_][A-Z0-9_.\\-]* [0-9] \""
+.\" time-stamp-format: "%:B %:d, %:y"
+.\" time-stamp-end: "\""
+.\" time-stamp-line-limit: 20
+.\" end:

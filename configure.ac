@@ -83,6 +83,7 @@ dnl AC_CONFIG_FILES([tests/Makefile tests/atlocal tests/etc/Makefile])
 dnl AM_MISSING_PROG([AUTOM4TE], [autom4te])
 AC_CONFIG_FILES([Makefile
 		 src/Makefile
+		 doc/Makefile
 		 tests/Makefile])
 AC_OUTPUT
 		 

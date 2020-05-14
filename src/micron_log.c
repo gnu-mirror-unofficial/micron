@@ -489,10 +489,15 @@ thr_syslog(void *ptr)
 
 static char const *strfac[] = {
     [PRI_NUM(LOG_USER)] =      "USER"     ,
+    [PRI_NUM(LOG_MAIL)] =      "MAIL"     ,
     [PRI_NUM(LOG_DAEMON)] =    "DAEMON"   ,
     [PRI_NUM(LOG_AUTH)] =      "AUTH"     ,
     [PRI_NUM(LOG_AUTHPRIV)] =  "AUTHPRIV" ,
-    [PRI_NUM(LOG_MAIL)] =      "MAIL"     ,
+    [PRI_NUM(LOG_SYSLOG)] =    "SYSLOG"   ,
+    [PRI_NUM(LOG_LPR)] =       "LPR"      ,
+    [PRI_NUM(LOG_NEWS)] =      "NEWS"     ,
+    [PRI_NUM(LOG_UUCP)] =      "UUCP"     ,
+    [PRI_NUM(LOG_FTP)] =       "FTP"      ,
     [PRI_NUM(LOG_CRON)] =      "CRON"     ,
     [PRI_NUM(LOG_LOCAL0)] =    "LOCAL0"   ,
     [PRI_NUM(LOG_LOCAL1)] =    "LOCAL1"   ,

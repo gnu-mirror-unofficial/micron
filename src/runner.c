@@ -139,6 +139,29 @@ proctab_lookup_safe(pid_t pid)
 extern char **environ;
 
 static void
+job_setprivs(struct cronjob *job, char **env)
+{
+    if (setgid(job->gid)) {
+	fprintf(stderr, "setgid(%lu): %s",
+		(unsigned long)job->gid, strerror(errno));
+	_exit(127);
+    }
+
+    if (initgroups(env_get(ENV_LOGNAME, env), job->gid)) {
+	fprintf(stderr, "initgroups(%s,%lu): %s",
+		env_get(ENV_LOGNAME, env), (unsigned long)job->gid,
+		strerror(errno));
+	_exit(127);
+    }
+
+    if (setuid(job->uid)) {
+	fprintf(stderr, "setuid(%lu): %s",
+		(unsigned long)job->uid, strerror(errno));
+	_exit(127);
+    }
+}    
+
+static void
 runner_start(struct cronjob *job)
 {
     pid_t pid;
@@ -241,25 +264,8 @@ runner_start(struct cronjob *job)
 	dup2(1, 2);
 
 	/* Switch to user privileges */
-	if (setgid(job->gid)) {
-	    fprintf(stderr, "setgid(%lu): %s",
-		    (unsigned long)job->gid, strerror(errno));
-	    _exit(127);
-	}
-
-	if (initgroups(env_get(ENV_LOGNAME, env), job->gid)) {
-	    fprintf(stderr, "initgroups(%s,%lu): %s",
-		    env_get(ENV_LOGNAME, env), (unsigned long)job->gid,
-		    strerror(errno));
-	    _exit(127);
-	}
-
-	if (setuid(job->uid)) {
-	    fprintf(stderr, "setuid(%lu): %s",
-		    (unsigned long)job->uid, strerror(errno));
-	    _exit(127);
-	}
-
+	job_setprivs(job, env);
+	
 	if (chdir(env_get(ENV_HOME, env))) {
 	    fprintf(stderr, "can't change to %s: %s",
 		    env_get(ENV_HOME, env), strerror(errno));
@@ -333,6 +339,8 @@ mailer_start(struct proctab *pt, const char *mailto)
 
 	if (pid == 0) {
 	    /* Grand-child */
+	    job_setprivs(pt->job, pt->env);
+
 	    dup2(p[0], 0);
 	    for (i = sysconf(_SC_OPEN_MAX); i > 0; i--) {
 		close(i);

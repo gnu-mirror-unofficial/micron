@@ -1,0 +1,186 @@
+.\" micron - a minimal cron implementation
+.\" Copyright (C) 2020 Sergey Poznyakoff
+.\"
+.\" Micron is free software; you can redistribute it and/or modify it
+.\" under the terms of the GNU General Public License as published by the
+.\" Free Software Foundation; either version 3 of the License, or (at your
+.\" option) any later version.
+.\"
+.\" Micron is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License along
+.\" with micron. If not, see <http://www.gnu.org/licenses/>. */
+.TH MICROND 8 "May 14, 2020" "MICROND" "System Manager's Manual"
+.SH NAME
+micrond \- a minimal cron implementation
+.SH SYNOPSIS
+\fBmicrond\fR\
+ [\fB\-fhs\fR]\
+ [\fB\-F \fIFAC\fR]\
+ [\fB\-g \fR[\fBno\fR]\fIGROUP\fR[\fB=\fIDIR\fR]]\
+ [\fB\-l \fIPRI\fR]\
+ [\fB\-m \fIMAILER\fR]\
+ [\fB\-p \fIDEV\fR]
+.SH DESCRIPTION
+Micrond executes commands periodically as directed by one or more
+\fIcrontabs\fR.  Each crontab is a plain text file, where each
+non-empty line contains a formal schedule and a command that must be
+run according to that schedule (a \fIcron job\fR).  System crontabs
+also supply the name of the user on whose behalf the command must be
+run.  Per-user crontabs lack this field, since the commands in them
+are always executed on behalf of the user who owns the crontab.
+.PP
+Normally, a cron jobs is not run if its previous instance is still
+running.  So that if a cron job that is run each minutes takes three
+minutes to finish, it will be actually run once in three minutes.
+However, maximum number of cron job instances that can be run
+simultaneously can be configured in crontab.
+.PP
+Any output the running job produces on its standard output and
+standard error is captured.  Upon termination, it is mailed to the
+owner of the job.  The message \fBFrom\fR header is set to the cron
+job owner name.  Its \fBSubject\fR contains the owner login name,
+hostname of the server where the command was run and the command
+itself, in the following format: ``Cron <\fIUSER\fR@\fIHOST\fR>
+\fICOMMAND\fR''.  A copy of execution environment is included in
+the message in form of additional \fBX-Cron-Env\fR headers, each
+containing a single environment variable.
+.PP
+The recipient of the message can be altered by setting the \fBMAILTO\fR
+variable in the crontab.
+.PP
+The mail is sent using ``/usr/sbin/sendmail -oi -t''.  The
+administrator can supply alternative mailer command via the \fB\-m\fR
+command line option.
+.PP
+Instead of mailing job outputs, \fBmicrond\fR can be configured to
+send them to a particular syslog facility.  If so configured, the
+output is logged synchronously with the job execution.  The syslog
+configuration can be global, using the \fB\-s\fR and \fB\-F\fR command
+line options, per-crontab or even per-job, using the
+\fBSYSLOG_FACILITY\fR variable setting.
+.PP
+On GNU/Linux systems, \fBmicrond\fR uses
+.BR inotify(7)
+to track crontab modifications.  On such systems a crontab is re-read
+as soon as it is written to disk.
+.PP
+On other systems, \fBmicrond\fR checks crontab mtimes each minute and
+re-reads the crontabs for which its value has changed.
+.PP
+.SS Crontab groups
+There are four collections of crontabs, called \fIcrongroups\fR for
+brevity.
+.TP
+.B Master crontab
+A single crontab named \fB/etc/crontab\fR.  It is owned by root.  Only
+root has write permissions.
+.br
+Each active line in this crontab consists of seven fields: first five
+fields provide a schedule, the sixth field is the login name on the
+user on whose behalf to run the command, and the rest of line is the
+command to run. 
+.TP
+.B System crongroup
+The system crongroup comprises crontabs located in the
+\fB/etc/cron.d\fR directory.  They have the same format, ownership and
+mode as the master crontab.  The purpose of this crongroup is to
+facilitate packaging, so that each software package may provide its own
+crontab and install it to a well-known location.
+.TP
+.B User crongroup
+Contains personal crontabs of system users.  Located in
+\fB/var/spool/cron/crontabs\fR directory, each crontab is owned by
+the corresponding user and only its owner has read and write
+permissions.
+.br
+Crontabs in this group don't have the username field.  The commands in
+them are always executed on behalf of the crontab owner.
+.TP
+.B User group crongroup
+Similarly to the user crongroup, it contains individual crontabs of
+system users.  However, each user can have multiple crontabs.
+Crontabs are located in subdirectories of
+\fB/var/spool/cron/crongroups\fR named after each particular user.
+Crontabs have the same format as per-user crontabs (no username
+field).  The owner of the user group can delegate the permission to
+create crontabs in it to another users by adding them to his primary
+system group.
+.br
+This group is designed mainly for pseudo-users, such
+as .e.g. \fIhttpd\fR or \fIbind\fR, to enable another users to execute
+commands on behalf of them.  This is useful, for example, on servers
+that host multiple websites.
+.br
+This group is experimental and its use must be explicitly enabled
+using the \fB\-g\fR option upon \fBmicrond\fR startup.
+.SH OPTIONS
+.TP
+.B \-f
+Remain in foreground.
+.TP
+\fB\-F \fIFAC\fR
+Log output from cronjobs to this facility (implies \fB\-s\fR).
+Default is \fBcron\fR.
+.TP
+.B \-h
+Display a short help summary and exit.
+.TP
+\fB\-g \fIGROUP\fB=\fIDIR\fR
+Define the directory or file name for crontab group \fIGROUP\fR.
+Valid \fIGROUP\fR names are:
+.BR master ,
+.BR system ,
+.BR user ,
+and
+.BR group .
+.TP
+\fB\-g \fR[\fBno\fR]\fIGROUP\fR
+Enable or disable crontab group \fIGROUP\fR.  Note, that the
+\fBgroup\fR crontab group is disabled by default.
+.TP
+\fB\-l \fIPRI\fR
+Log only messages with syslog priority \fIPRI\fR or higher.  Valid
+arguments in order of increasing priority:
+.BR debug ,
+.BR info , 
+.BR notice ,
+.BR warning ,
+.BR err ,  
+.BR crit , 
+.BR alert ,
+.BR emerg .
+.TP
+\fB\-m \fIMAILER\fR
+Set mailer command.  Default is ``/usr/sbin/sendmail -oi -t''.
+.TP
+\fB\-p \fISOCKET\fR
+Send messages to syslog via this socket.  \fISOCKET\fR is either an
+absolute file name of a UNIX socket, or a host name or IPv4 address
+optionally followed by a colon and port number or service name.
+.TP
+.B \-s
+Log output from cronjobs to syslog.  By default, the \fBcron\fR
+facility is used.  Use \fB\-F\fR to change it.
+.SH SEE ALSO
+.BR crontab (1),
+.BR crontab (5).
+.SH COPYRIGHT
+Copyright \(co 2020 Sergey Poznyakoff <gray@gnu.org>
+.br
+.na
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+.br
+.ad
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+.\" Local variables:
+.\" eval: (add-hook 'write-file-hooks 'time-stamp)
+.\" time-stamp-start: ".TH [A-Z_][A-Z0-9_.\\-]* [0-9] \""
+.\" time-stamp-format: "%:B %:d, %:y"
+.\" time-stamp-end: "\""
+.\" time-stamp-line-limit: 20
+.\" end:

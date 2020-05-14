@@ -129,7 +129,7 @@ usage(int ex)
     FILE *fp = ex ? stderr : stdout;
     fprintf(fp, "usage: %s [-u NAME] FILE\n", progname);
     fprintf(fp, "       %s [-eilr] [-u NAME]\n", progname);
-    fprintf(fp, "       %s -g -u NAME [-eilr] FILE\n", progname);
+    fprintf(fp, "       %s -g [-u NAME] [-eilr] FILE\n", progname);
     fprintf(fp, "Crontab manipulations.\n");
     fprintf(fp, "\nOptions are:\n\n");
     fprintf(fp, "    -e              edit crontab\n");
