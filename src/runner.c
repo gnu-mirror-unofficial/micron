@@ -54,8 +54,6 @@ runner_dequeue(void)
     return LIST_HEAD_DEQUEUE(&runner_queue, job, runq);
 }
 
-static void *cron_thr_logger(void *arg);
-
 enum {
     PROCTAB_COMM,
     PROCTAB_MAIL
@@ -106,7 +104,7 @@ proctab_lookup_job(struct cronjob *job)
 	    return pt;
     }
     return NULL;
-}    
+}
 
 static inline void
 proctab_remove(struct proctab *pt)
@@ -160,7 +158,9 @@ job_setprivs(struct cronjob *job, char **env)
 		(unsigned long)job->uid, strerror(errno));
 	_exit(127);
     }
-}    
+}
+
+static void logger_enqueue(struct proctab *pt);
 
 static void
 runner_start(struct cronjob *job)
@@ -172,11 +172,11 @@ runner_start(struct cronjob *job)
     int p[2];
     int pt_syslog = 0;
     char const *ep;
-    
+
     micron_log(LOG_DEBUG, "running \"%s\" on behalf of %lu.%lu",
 	       job->command, (unsigned long)job->uid,
 	       (unsigned long)job->gid);
-    
+
     env = cronjob_mkenv(job);
     if (!env) {
 	micron_log(LOG_ERR, "can't create environment");
@@ -187,7 +187,7 @@ runner_start(struct cronjob *job)
     pt = proctab_lookup_job(job);
     if (pt) {
 	if (!job->allow_multiple) {
-	    micron_log(LOG_ERR, 
+	    micron_log(LOG_ERR,
 		       "won't start \"%s\": previous instance "
 		       "is still running (PID %lu)",
 		       job->command,
@@ -195,12 +195,12 @@ runner_start(struct cronjob *job)
 	    cronjob_unref(job);
 	    return;
 	}
-	micron_log(LOG_WARNING, 
+	micron_log(LOG_WARNING,
 		   "starting \"%s\": %u instances already running",
 		   job->command,
-		   job->refcnt - 1);	
+		   job->refcnt - 1);
     }
-    
+
     ep = env_get(ENV_SYSLOG_EVENTS, env);
     if (ep) {
 	if (*ep == 0 ||
@@ -212,8 +212,8 @@ runner_start(struct cronjob *job)
 	else {
 	    pt_syslog = micron_log_str_to_fac(ep);
 	}
-    }	
-    
+    }
+
     if (pt_syslog) {
 	if (pipe(p)) {
 	    micron_log(LOG_ERR, "pipe: %s", strerror(errno));
@@ -244,9 +244,9 @@ runner_start(struct cronjob *job)
 	unlink(template);
 	free(template);
     }
-    
+
     pthread_mutex_lock(&proctab_mutex);
-    
+
     pid = fork();
     if (pid == -1) {
 	micron_log(LOG_ERR, "fork: %s", strerror(errno));
@@ -255,24 +255,24 @@ runner_start(struct cronjob *job)
 	pthread_mutex_unlock(&proctab_mutex);
 	return;
     }
-    
+
     if (pid == 0) {
 	int i;
 	char const *shell;
-	
+
 	/* Redirect stdout and stderr to file */
 	dup2(fd, 1);
 	dup2(1, 2);
 
 	/* Switch to user privileges */
 	job_setprivs(job, env);
-	
+
 	if (chdir(env_get(ENV_HOME, env))) {
 	    fprintf(stderr, "can't change to %s: %s",
 		    env_get(ENV_HOME, env), strerror(errno));
 	    _exit(127);
 	}
-	    
+
 	/* Close the rest of descriptors */
 	for (i = sysconf(_SC_OPEN_MAX); i > 2; i--) {
 	    close(i);
@@ -295,12 +295,10 @@ runner_start(struct cronjob *job)
     if (pt_syslog) {
 	close(p[1]);
 	fd = p[0];
-    } 
-    pt->fd = fd;
-    if (pt_syslog) {
-	pthread_t tid;
-	pthread_create(&tid, NULL, cron_thr_logger, pt);
     }
+    pt->fd = fd;
+    if (pt_syslog)
+	logger_enqueue(pt);
     pthread_cond_broadcast(&proctab_cond);
     pthread_mutex_unlock(&proctab_mutex);
 }
@@ -309,7 +307,7 @@ static int
 mailer_start(struct proctab *pt, const char *mailto)
 {
     pid_t pid;
-    
+
     micron_log(LOG_DEBUG, "command=\"%s\", mailing results to %s",
 	       pt->job->command, mailto);
     pid = fork();
@@ -324,10 +322,10 @@ mailer_start(struct proctab *pt, const char *mailto)
 	int i;
 	char hostname[HOST_NAME_MAX+1];
 	char const *mailfrom;
-	
+
 	gethostname(hostname, sizeof(hostname));
 	hostname[HOST_NAME_MAX] = 0;
-	
+
 	if (pipe(p)) {
 	    _exit(127);
 	}
@@ -358,7 +356,7 @@ mailer_start(struct proctab *pt, const char *mailto)
 
 	signal(SIGALRM, SIG_DFL);
 	alarm(10);
-	
+
 	mailfrom = env_get(ENV_LOGNAME, pt->env);
 	fprintf(out, "From: \"(Cron daemon)\" <%s@%s>\n",
 		mailfrom, hostname);
@@ -391,7 +389,7 @@ cron_thr_runner(void *ptr)
     pthread_mutex_lock(&runner_mutex);
     while (1) {
 	struct cronjob *job;
-	
+
 	pthread_cond_wait(&runner_cond, &runner_mutex);
 	while ((job = runner_dequeue()) != NULL)
 	    runner_start(job);
@@ -411,7 +409,7 @@ cron_thr_cleaner(void *ptr)
 	while (list_head_is_empty(&proctab_head))
 	    pthread_cond_wait(&proctab_cond, &proctab_mutex);
 	pthread_mutex_unlock(&proctab_mutex);
-	
+
 	pid = wait(&status);
 	if (pid == (pid_t)-1)
 	    continue;
@@ -458,33 +456,179 @@ cron_thr_cleaner(void *ptr)
     return NULL;
 }
 
+static struct list_head logger_queue = LIST_HEAD_INITIALIZER(logger_queue);
+static int logger_pipe[2];
+static pthread_t logger_tid = 0;
+
+struct logbuf {
+    int fd;
+    int facility;
+    char const *tag;
+    pid_t pid;
+    char *buffer;
+    size_t level;
+    size_t size;
+    int overflow;
+    struct list_head link;
+};
+
+static void
+logbuf_flush(struct logbuf *bp, int flushall)
+{
+    while (bp->level > 0) {
+	char *p;
+	size_t len;
+
+	p = memchr(bp->buffer, '\n', bp->level);
+	if (p) {
+	    *p++ = 0;
+	    len = bp->level - (p - bp->buffer);
+	} else if (flushall) {
+	    bp->buffer[bp->level] = 0;
+	    len = 0;
+	} else
+	    break;
+
+	micron_log_enqueue(bp->facility|LOG_INFO,
+			   bp->buffer,
+			   bp->tag,
+			   bp->pid);
+	if (len > 0)
+	    memmove(bp->buffer, p, len);
+	bp->level = len;
+    }
+}
+
 static void *
 cron_thr_logger(void *arg)
 {
-    struct proctab *pt = arg;
-    pid_t pid = pt->pid;
-    int fd = pt->fd;
-    int fac = pt->syslog;
-    size_t len;
-    char *tag;
-    FILE *fp;
-    char buf[MICRON_LOG_BUF_SIZE];
-    
-    len = strcspn(pt->job->command, " \t");
-    tag = malloc(len + 1);
-    if (tag) {
-	memcpy(tag, pt->job->command, len);
-	tag[len] = 0;
+    int reinit = 1;
+    fd_set logger_set;
+    int logger_max_fd;
+
+    if (pipe(logger_pipe)) {
+	micron_log(LOG_ERR, "can't create control pipe: %s",
+		   strerror(errno));
+	/* FIXME: Not the best solution, perhaps */
+	exit(EXIT_FATAL);
     }
-    fp = fdopen(fd, "r");
-    if (!fp) {
-	free(tag);
-	return NULL;
+    while (1) {
+	struct logbuf *bp, *prev;
+	fd_set rds;
+	int n;
+
+	if (reinit) {
+	    logger_max_fd = logger_pipe[0];
+	    FD_ZERO(&logger_set);
+	    FD_SET(logger_pipe[0], &logger_set);
+	    LIST_FOREACH(bp, &logger_queue, link) {
+		if (bp->fd > logger_max_fd)
+		    logger_max_fd = bp->fd;
+		FD_SET(bp->fd, &logger_set);
+	    }
+	    reinit = 0;
+	}
+
+	rds = logger_set;
+
+	n = select(logger_max_fd + 1, &rds, NULL, NULL, NULL);
+	if (n == -1) {
+	    micron_log(LOG_ERR, "select: %s", strerror(errno));
+	    reinit = 1;
+	    continue;
+	}
+
+	if (FD_ISSET(logger_pipe[0], &rds)) {
+	    n = read(logger_pipe[0], &reinit, 1);
+	    if (n < 0) {
+		micron_log(LOG_ERR, "read from control pipe: %s",
+			   strerror(errno));
+		break;
+	    }
+	}
+
+	LIST_FOREACH_SAFE(bp, prev, &logger_queue, link) {
+	    if (FD_ISSET(bp->fd, &rds)) {
+		if (bp->overflow) {
+		    char c;
+		    n = read(bp->fd, &c, 1);
+		    if (n <= 0 || (n == 1 && c == '\n')) {
+			bp->overflow = 0;
+			continue;
+		    }
+		} else if (bp->level == bp->size) {
+		    if (bp->size >= MICRON_LOG_BUF_SIZE) {
+			bp->overflow = 1;
+			bp->level--;
+			logbuf_flush(bp, 1);
+		    } else {
+			char *p;
+			p = memrealloc(bp->buffer, &bp->size, 1);
+			if (p == NULL) {
+			    bp->overflow = 1;
+			    logbuf_flush(bp, 1);
+			    continue;
+			}
+			bp->buffer = p;
+		    }
+		}
+
+		n = read(bp->fd, bp->buffer + bp->level, bp->size - bp->level);
+		
+		if (n <= 0) {
+		    logbuf_flush(bp, 1);
+		    close(bp->fd);
+		    LIST_REMOVE(bp, link);
+		    free(bp->buffer);
+		    free(bp);
+		    reinit = 1;
+		} else {
+		    bp->level += n;
+		    logbuf_flush(bp, 0);
+		}
+	    }
+	}
     }
-    while (fgets(buf, sizeof buf, fp)) {
-	micron_log_enqueue(fac|LOG_INFO, buf, tag, pid);
-    }
-    free(tag);
-    fclose(fp);
+    micron_log(LOG_NOTICE, "logger thread terminating");
+    close(logger_pipe[0]);
+    close(logger_pipe[1]);
+    logger_tid = 0;
     return NULL;
+}
+
+static void
+logger_enqueue(struct proctab *pt)
+{
+    struct logbuf *bp;
+    size_t taglen;
+
+    if (!logger_tid) {
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_create(&logger_tid, &attr, cron_thr_logger, NULL);
+	pthread_attr_destroy(&attr);
+    }
+
+    taglen = strlen(pt->job->command);
+    bp = calloc(1, sizeof(*bp) + taglen + 1);
+    if (bp) {
+	int c;
+
+	bp->fd = pt->fd;
+	bp->facility = pt->syslog;
+	bp->tag = (char*)(bp + 1);
+	strcpy((char*)bp->tag, pt->job->command);
+	bp->pid = pt->pid;
+	
+	pt->fd = -1;
+
+	LIST_HEAD_ENQUEUE(&logger_queue, bp, link);
+
+	c = 1;
+	if (write(logger_pipe[1], &c, sizeof(c)) < 0) {
+	    micron_log(LOG_ERR, "error writing to control pipe: %s",
+		       strerror(errno));
+	}
+    }
 }
