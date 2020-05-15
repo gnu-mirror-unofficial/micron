@@ -1216,6 +1216,25 @@ copy_unquoted(char *dst, char const *src)
 }
 
 static int
+parse_syslog_facility(char const *str, int *pf)
+{
+    int n;
+    
+    if (*str == 0 ||
+	strcasecmp(str, "off") == 0 ||
+	strcasecmp(str, "none") == 0)
+	return 0;
+    else if (strcasecmp(str, "default") == 0) {
+	*pf = syslog_facility;
+	return 1;
+    } else if ((n = micron_log_str_to_fac(str)) != -1) {
+	*pf = n;
+	return 1;
+    }
+    return -1;
+}
+
+static int
 check_var(char const *def)
 {
     static char syslog_var[] = ENV_SYSLOG_EVENTS;
@@ -1223,14 +1242,10 @@ check_var(char const *def)
     
     if (strncmp(def, syslog_var, syslog_var_len) == 0
 	&& def[syslog_var_len] == '=') {
+	int n;
+	
 	def += syslog_var_len + 1;
-	if (*def == 0
-	    || strcasecmp(def, "off") == 0
-	    || strcasecmp(def, "none") == 0
-	    || strcasecmp(def, "default") == 0
-	    || micron_log_str_to_fac(def) != -1)
-	    return 0;
-	else
+	if (parse_syslog_facility(def, &n) == -1)
 	    return 1;
     }
     return 0;
@@ -1281,6 +1296,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
     struct passwd *pwd;
     int env_cont = 1;
     struct micron_environ *env;
+    size_t filename_len = strlen(filename);
     
     /* Do nothing if this crongroup is disabled */
     if (cgrp->flags & (CGF_DISABLED | CGF_UNSAFE))
@@ -1538,6 +1554,27 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	    } else
 		job->allow_multiple = (int) n;
 	}
+
+	ep = micron_environ_get(env, &cp->env_head, ENV_SYSLOG_EVENTS);
+	if ((ep && parse_syslog_facility(ep, &job->syslog_facility) == 1) ||
+	    (syslog_enable && (job->syslog_facility = LOG_CRON))) {
+	    char *tag;
+	    int cmdlen = strcspn(job->command, " \t");
+	    size_t len = strlen(cp->crongroup->dirname) +
+		         cmdlen +
+		         filename_len + 80;
+
+	    tag = malloc(len);
+	    if (!tag) {
+		micron_log(LOG_ERR, PRsCRONTAB ":%u: can't allocate syslog tag",
+			   ARGCRONTAB(cgrp, filename), line);
+	    } else {
+		snprintf(tag, len, "%s/%s:%u(%*.*s)", cp->crongroup->dirname,
+			 filename, line, cmdlen, cmdlen, job->command);
+		job->syslog_tag = tag;
+	    }
+	}
+	
 	cronjob_arm(job, ifmod & PARSE_APPLY_NOW);
     }
     fclose(fp);

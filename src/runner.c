@@ -170,7 +170,6 @@ runner_start(struct cronjob *job)
     int fd;
     struct proctab *pt;
     int p[2];
-    int pt_syslog = 0;
     char const *ep;
 
     micron_log(LOG_DEBUG, "running \"%s\" on behalf of %lu.%lu",
@@ -201,20 +200,7 @@ runner_start(struct cronjob *job)
 		   job->refcnt - 1);
     }
 
-    ep = env_get(ENV_SYSLOG_EVENTS, env);
-    if (ep) {
-	if (*ep == 0 ||
-	    strcasecmp(ep, "off") == 0 ||
-	    strcasecmp(ep, "none") == 0)
-	    pt_syslog = 0;
-	else if (strcasecmp(ep, "default") == 0)
-	    pt_syslog = syslog_facility;
-	else {
-	    pt_syslog = micron_log_str_to_fac(ep);
-	}
-    }
-
-    if (pt_syslog) {
+    if (job->syslog_facility) {
 	if (pipe(p)) {
 	    micron_log(LOG_ERR, "pipe: %s", strerror(errno));
 	    env_free(env);
@@ -291,13 +277,13 @@ runner_start(struct cronjob *job)
     pt->pid = pid;
     pt->job = job;
     pt->env = env;
-    pt->syslog = pt_syslog;
-    if (pt_syslog) {
+    pt->syslog = job->syslog_facility;
+    if (pt->syslog) {
 	close(p[1]);
 	fd = p[0];
     }
     pt->fd = fd;
-    if (pt_syslog)
+    if (pt->syslog)
 	logger_enqueue(pt);
     pthread_cond_broadcast(&proctab_cond);
     pthread_mutex_unlock(&proctab_mutex);
@@ -462,8 +448,7 @@ static pthread_t logger_tid = 0;
 
 struct logbuf {
     int fd;
-    int facility;
-    char const *tag;
+    struct cronjob *job;
     pid_t pid;
     char *buffer;
     size_t level;
@@ -489,9 +474,9 @@ logbuf_flush(struct logbuf *bp, int flushall)
 	} else
 	    break;
 
-	micron_log_enqueue(bp->facility|LOG_INFO,
+	micron_log_enqueue(bp->job->syslog_facility|LOG_INFO,
 			   bp->buffer,
-			   bp->tag,
+			   bp->job->syslog_tag,
 			   bp->pid);
 	if (len > 0)
 	    memmove(bp->buffer, p, len);
@@ -579,6 +564,7 @@ cron_thr_logger(void *arg)
 		    logbuf_flush(bp, 1);
 		    close(bp->fd);
 		    LIST_REMOVE(bp, link);
+		    cronjob_unref(bp->job);	
 		    free(bp->buffer);
 		    free(bp);
 		    reinit = 1;
@@ -609,16 +595,13 @@ logger_enqueue(struct proctab *pt)
 	pthread_create(&logger_tid, &attr, cron_thr_logger, NULL);
 	pthread_attr_destroy(&attr);
     }
-
-    taglen = strlen(pt->job->command);
-    bp = calloc(1, sizeof(*bp) + taglen + 1);
+    cronjob_ref(pt->job);
+    bp = calloc(1, sizeof(*bp));
     if (bp) {
 	int c;
 
 	bp->fd = pt->fd;
-	bp->facility = pt->syslog;
-	bp->tag = (char*)(bp + 1);
-	strcpy((char*)bp->tag, pt->job->command);
+	bp->job = pt->job;
 	bp->pid = pt->pid;
 	
 	pt->fd = -1;
@@ -630,5 +613,6 @@ logger_enqueue(struct proctab *pt)
 	    micron_log(LOG_ERR, "error writing to control pipe: %s",
 		       strerror(errno));
 	}
-    }
+    } else
+	cronjob_unref(pt->job);	
 }

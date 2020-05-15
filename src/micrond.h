@@ -42,7 +42,8 @@ struct cronjob {
     struct list_head runq;     /* Links to the next and prev runqueue
 				  entries */
     int fileid;                /* Crontab identifier */
-    unsigned line;             /* Line in file where it is defined */
+    int syslog_facility;
+    char *syslog_tag; 
     unsigned refcnt;           /* Number of times this entry is referenced */
 };
 
@@ -58,6 +59,7 @@ cronjob_unref(struct cronjob *cp)
     if (--cp->refcnt == 0) {
 	LIST_REMOVE(cp, list);
 	LIST_REMOVE(cp, runq);
+	free(cp->syslog_tag);
 	free(cp);
 	cp = NULL;
     }
