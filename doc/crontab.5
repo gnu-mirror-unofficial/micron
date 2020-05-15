@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 5 "May 14, 2020" "CRONTAB" "File Formats Manual"
+.TH CRONTAB 5 "May 15, 2020" "CRONTAB" "File Formats Manual"
 .SH NAME
 crontab \- tables for driving micrond
 .SH DESCRIPTION
@@ -23,7 +23,7 @@ are mostly compatible with Vixie crontabs.  The leading and trailing
 whitespace is ignored.  Comments are introduced by a hash sign (#)
 appearing as the first non-whitespace character in a line.  Comment
 lines and empty lines are ignored.  Very long lines can be split
-across several physical line using backslash as continuation
+across several physical lines using backslash as continuation
 character.  Total length of a valid crontab line after removing
 continuation characters cannot exceed 1024 characters.
 .PP
@@ -66,14 +66,16 @@ constructs:
 .I N
 A single number.  E.g. 2 in first field means ``second minute of an
 hour''.
+.TP
 .I I-J
 Two numbers delimited by a dash define a range.  E.g 2-5 in first
-field is ``minutes 2,3,4,and 5 (inclusive)''.  The order is
+field is ``minutes 2,3,4, and 5 (inclusive)''.  The order is
 important.  For example, the following schedule:
 .br
     55-5 * * * *
 .br
 means ``minutes 55 through 59 and 0 through 5 of the next hour''.
+.TP
 .I I-J/N
 Same as above, but with step of N units, e.g.:
 .br
@@ -82,10 +84,10 @@ Same as above, but with step of N units, e.g.:
 which stands for ``minutes 10,15,20,25''.
 .PP
 Names can be used in ``month'' and ``day of week'' fields.  Day and
-week names are abbreviated to their first three characters,
-case-insensitive.  Ranges or lists of names are allowed as well.
+week names are abbreviated to their first three characters
+(case-insensitive).  Ranges or lists of names are allowed as well.
 .PP
-The day of a command's execution can be specified by two fields 
+The day of command's execution can be specified by two fields:
 day of month, and day of week.  Their exact meaning depends on the
 selected
 .IR "day field semantics" .
@@ -110,7 +112,7 @@ on the 1st and 15th of each month, plus every Friday.
 .I Dillon semantics
 If both day in the month and a day of week are supplied, the former
 must be integer numbers in range 1-5.  The meaning is Nth such weekday
-in the month.  For example, to run the date comment at 11 am on the
+in the month.  For example, to run the date command at 11 am on the
 second and third Monday, Tuesday and Wednesday of each month:
 .br
     0 11 2,3 * mon-wed date
@@ -163,7 +165,7 @@ which holds a login name of the user on whose behalf the command will
 be run.
 .PP
 This field is absent in user personal crontabs, since these are always
-run on behalf of user that owns them,
+run on behalf of the user that owns them,
 .PP
 The rest of line is taken as a shell command to be run when the time
 matches the schedule.  Before running the command, \fBmicrond\fR
@@ -181,7 +183,7 @@ its behavior.  A variable setting has the form
 where \fIname\fR is the variable name and \fIvalue\fR is the value to
 be assigned to it.  Notice several important differences from the
 similar construct in shell.  First of all, optional whitespace is
-allowed at both sides of the equals sign.  Secondly, the value is
+allowed on either side of the equals sign.  Secondly, the value is
 assigned verbatim, after removing the trailing and leading whitespace.
 You don't need to quote it even if it contains embedded whitespace.
 The only case when quoting becomes necessary is if you wish to
@@ -194,10 +196,10 @@ variable, use a pair of quotes or an empty string.
 Finally, notice that the value is always taken verbatim.  No
 expansions or substitutions take place.  If you need this kind of
 functionality, move environment manipulations to a shell script and
-invoke it from the cron command.
+invoke the script from the cron command.
 .PP
 A variable setting applies to all cron commands that follow it, until
-another setting overwrites it or end of file is encountered.
+another setting overwrites it or the end of file is encountered.
 .PP
 The following variables modify the behavior of \fBmicrond\fR itself.
 .TP
@@ -246,7 +248,7 @@ simultaneously.  Default is 0, i.e. \fBmicrond\fR will refuse to start
 a job if its previous run has not yet terminated.
 .TP
 .B CRON_DAY_SEMANTICS
-Defines the day semantics assumed in this crontab.  Allowed values are:
+Defines the day semantics for the lines that follow.  Allowed values are:
 .BR strict ,
 .BR vixie ,
 and
@@ -270,6 +272,9 @@ This section lists the differences of the \fBmicrond\fR crontabs over
 these of Vixie and Dillon crons.
 .nr step 1 1
 .IP \n[step].
+Long crontab lines can be split across several physical lines using
+backslash continuation.
+.IP \n+[step].
 The semantics of the two day fields is configurable.  The default
 \fBstrict\fR semantics differs from both implementations.
 .IP \n+[step].
