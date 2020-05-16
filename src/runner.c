@@ -170,7 +170,6 @@ runner_start(struct cronjob *job)
     int fd;
     struct proctab *pt;
     int p[2];
-    char const *ep;
 
     micron_log(LOG_DEBUG, "running \"%s\" on behalf of %lu.%lu",
 	       job->command, (unsigned long)job->uid,
@@ -442,6 +441,7 @@ cron_thr_cleaner(void *ptr)
     return NULL;
 }
 
+static pthread_mutex_t logger_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct list_head logger_queue = LIST_HEAD_INITIALIZER(logger_queue);
 static int logger_pipe[2];
 static pthread_t logger_tid = 0;
@@ -506,11 +506,13 @@ cron_thr_logger(void *arg)
 	    logger_max_fd = logger_pipe[0];
 	    FD_ZERO(&logger_set);
 	    FD_SET(logger_pipe[0], &logger_set);
+	    pthread_mutex_lock(&logger_mutex);
 	    LIST_FOREACH(bp, &logger_queue, link) {
 		if (bp->fd > logger_max_fd)
 		    logger_max_fd = bp->fd;
 		FD_SET(bp->fd, &logger_set);
 	    }
+	    pthread_mutex_unlock(&logger_mutex);
 	    reinit = 0;
 	}
 
@@ -532,6 +534,7 @@ cron_thr_logger(void *arg)
 	    }
 	}
 
+	pthread_mutex_lock(&logger_mutex);
 	LIST_FOREACH_SAFE(bp, prev, &logger_queue, link) {
 	    if (FD_ISSET(bp->fd, &rds)) {
 		if (bp->overflow) {
@@ -574,6 +577,7 @@ cron_thr_logger(void *arg)
 		}
 	    }
 	}
+	pthread_mutex_unlock(&logger_mutex);
     }
     micron_log(LOG_NOTICE, "logger thread terminating");
     close(logger_pipe[0]);
@@ -586,7 +590,6 @@ static void
 logger_enqueue(struct proctab *pt)
 {
     struct logbuf *bp;
-    size_t taglen;
 
     if (!logger_tid) {
 	pthread_attr_t attr;
@@ -606,7 +609,9 @@ logger_enqueue(struct proctab *pt)
 	
 	pt->fd = -1;
 
+	pthread_mutex_lock(&logger_mutex);
 	LIST_HEAD_ENQUEUE(&logger_queue, bp, link);
+	pthread_mutex_unlock(&logger_mutex);
 
 	c = 1;
 	if (write(logger_pipe[1], &c, sizeof(c)) < 0) {

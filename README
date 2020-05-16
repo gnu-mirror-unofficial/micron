@@ -1,0 +1,310 @@
+			  ___________________
+
+				 MICRON
+
+			   Sergey Poznyakoff
+			  ___________________
+
+
+Table of Contents
+_________________
+
+1 Overview
+2 Crontabs
+3 Features
+.. 3.1 User group crontabs
+.. 3.2 Long crontab lines
+.. 3.3 The day field semantics
+.. 3.4 Variable assignment in crontabs
+.. 3.5 Job output report
+.. 3.6 Simultaneous job execution
+.. 3.7 Detection of crontab modifications
+4 Downloads and Installation
+5 The name
+6 References
+7 Bug reports
+8 Copyright
+
+
+1 Overview
+==========
+
+  *Micron* is an implementation of the UNIX *cron* daemon, a program
+  that executes periodically various tasks.  It aims to provide several
+  enhancements while being mostly backward-compatible with the two most
+  widely used cron implementations: Vixie and Dillon crons.
+
+  The implementation consists of two binaries: the main daemon *micrond*
+  and the *crontab* utility.
+
+
+2 Crontabs
+==========
+
+  The instructions specifying what commands to run and when are kept in
+  a set *crontab* files.  *Micrond* reads crontabs at startup and loads
+  them to memory.  During its runtime it keeps track of crontab
+  modifications and updates its in-memory tables as soon as a
+  modification is detected.
+
+  The crontabs are stored in several locations, collectively know as
+  crontab groups:
+
+  master crontab: The master crontab is read from the file
+                    */etc/crontab*.
+
+  system crontabs: A collection of crontab files in the */etc/cron.d*
+                     directory.
+
+  user crontabs: Per-user crontabs are located in
+                   */var/spool/cron/crontabs*.
+
+  user group crontabs: A special crontab group intended for use with
+                       pseudo-accounts, such as *apache* or *bind*.
+                       Crontabs of this group are located in
+                       subdirectories of */var/spool/cron/crongroups*
+                       named by the corresponding account.  This crontab
+                       group will be described in detail later.
+
+  Both master and system crontabs are writable only by the super-user.
+  For each command to be run they specify, along with the schedule, the
+  name of the user on behalf of which it must be run.
+
+  User and user group crontabs belong to particular users and
+  instructions they contain are executed on behalf of their owners.  To
+  enable users to manipulate their crontabs, the *crontab* command is
+  provided.
+
+
+3 Features
+==========
+
+  The following features of *micron* differ from the two reference cron
+  implementations.
+
+
+3.1 User group crontabs
+~~~~~~~~~~~~~~~~~~~~~~~
+
+  User group crontabs are an experimental feature designed to facilitate
+  maintenance of per-service crontabs by many users.  Consider, for
+  example, a web server that runs multiple web sites maintained by
+  various users who need to run periodic backend jobs on behalf of the
+  account the httpd server runs as.  User group crontabs make it
+  possible without intervention of the system administrator.  Let's
+  assume httpd runs as the user *apache*.  The system administrator
+  creates a directory */var/spool/cron/crongroups/apache*, and sets
+  *apache* as its owner:
+
+  ,----
+  | mkdir /var/spool/cron/crongroups/apache
+  | chown apache: /var/spool/cron/crongroups/apache
+  `----
+
+  Then, he adds the users who should be able to edit apache cronjobs to
+  the primary group of the *apache* user.  Once done, these users become
+  able to create and edit crontabs in this directory using the *crontab*
+  command with the *-g* option (for *group*).  For example, the command
+
+  ,----
+  | crontab -u apache -g -e myproject
+  `----
+
+  edits the file *myproject* in this directory.
+
+  User group crontabs are disabled by default.  To enable them, run
+  *micrond* with the *-g group* option.
+
+
+3.2 Long crontab lines
+~~~~~~~~~~~~~~~~~~~~~~
+
+  Very long crontab lines can be split across several physical lines
+  using the familiar backslash continuation technique: a backslash
+  appearing immediately before the ending newline character is removed
+  along with the newline and the content of the next line is appended in
+  its place.  Miltiple line continuations are allowed, as long as the
+  total line length does not exceed 1024 characters.
+
+
+3.3 The day field semantics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  In a crontab schedule, the day of a command's execution can be
+  specified by two fields: day of month (field 3), and day of week
+  (field 5).  If both fields are restricted (i.e. are not '*'), their
+  interpretation differs among various implementations.  Vixie cron will
+  run the command when either field matches the current time (the fields
+  are joined by a logical OR).  Dillon's cron interprets the 3rd field
+  as an ordinal number of weekday in month (so that allowed numeric
+  values of the 3rd field in this case are 1-5).  Consider for example
+  the following schedule
+
+  ,----
+  | 0 11 1,4 * 1-3
+  `----
+
+  For Vixie cron, this means "run the command on each 1st and 4th day of
+  the month as well as on each Monday, Tuesday and Wednesday".  The
+  meaning of this schedule for Dillon's cron is: "run the command on
+  each first and fourth Monday, Tuesday and Wednesday in the month".
+
+  The semantics used by *micron* is configurable.  By default it assumes
+  the two fields to be joined by a logical AND, i.e. the example above
+  would mean "each first and fourth day of the month *if* the day of
+  week is Monday, Tuesday or Wednesday".  The use of Vixie or Dillon
+  semantics can be requested by setting the `CRON_DAY_SEMANTICS'
+  variable in the crontab.  For example, the line
+
+  ,----
+  | CRON_DAY_SEMANTICS = Vixie
+  `----
+
+  requests the semantics used by Vixie cron.
+
+
+3.4 Variable assignment in crontabs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Variable assignments can appear anyplace in a crontab.  The modified
+  environment remains in effect for all subsequent commands until
+  changed by another assignment or the end of file is reached, whichever
+  happens first.  For example, the output of the following two example
+  entries is mailed to two different users:
+
+  ,----
+  | MAILTO=one
+  | * * * * * command one
+  | MAILTO=two
+  | * * * * * command two
+  `----
+
+
+3.5 Job output report
+~~~~~~~~~~~~~~~~~~~~~
+
+  Output of a crontab job can be either mailed to its owner (a
+  traditional behavior) or reported via *syslog* to an arbitrary
+  facility.  This can be configured both globally (by the *-s* command
+  line option), or individually in a crontab (using the
+  `BSYSLOG_FACILITY' variable).
+
+
+3.6 Simultaneous job execution
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Number of simultaneously running instances of a cron job is limited.
+  It is controlled by the value of the `JOB_ALLOW_MULTIPLE' variable.
+  The default value is 1, which means that the job won't be started
+  until its previous instance terminates.  This differs both from Vixie
+  implementation, where a job is started no matter how many of its
+  instances are running, and from Dillon's cron, which refuses to start
+  a job until its prior instance has terminated.
+
+
+3.7 Detection of crontab modifications
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  On GNU/Linux systems, *micron* uses [inotify](8) to track crontab
+  modifications, which means that any change to a crontab is noticed as
+  soon as the crontab file is saved.
+
+  On other systems, *micron* relies to checking the crontab modification
+  times each minute, which is less effective.
+
+  The use of `kqueue' interface on *BSD systems is planned in future
+  versions.
+
+
+  [inotify] http://man.gnu.org.ua/manpage/?7+inotify
+
+
+4 Downloads and Installation
+============================
+
+  The program can be downloaded from
+  [https://download.gnu.org.ua/release/micron].  Before installation,
+  create a group which will be used as owner of the user and user group
+  crontab directories.  The *crontab* binary will be installed as
+  set-GID to that group.  By default, the group is named *crontab*.
+  Assuming this, the usual build sequence is
+
+  ,----
+  | ./configure
+  | make
+  | make install
+  `----
+
+  If you chose another group name, supply it to `configure' using the
+  `--with-crontab-gid' option.
+
+  The above commands will install the package under */usr/local*.  That
+  is, the server will be installed as */usr/local/sbin/micron*, the
+  *crontab* utility as */usr/local/bin/crontab*, etc.  If that's not
+  what you want, use the *--prefix* option to specify the installation
+  prefix, e.g.
+
+  ,----
+  | ./configure --prefix=/usr
+  `----
+
+  Please refer to the `INSTALL' document in the source directory for a
+  discussion of available options to configure and their effect.
+
+
+5 The name
+==========
+
+  It was thought to be a MInimal CRON implementation.  Turned out the
+  other way.
+
+
+6 References
+============
+
+  The complete documentation for the package is available from the
+  following locations:
+
+  [micrond](8): The cron
+                daemon
+                program.
+  [crontab](1): Manual page
+                for the
+                *crontab*
+                utility.
+  [crontab](5): Crontab file
+                format.
+
+
+  [micrond] http://man.gnu.org.ua/manpage/?8+micrond
+
+  [crontab] http://man.gnu.org.ua/manpage/?1+crontab
+
+  [crontab] http://man.gnu.org.ua/manpage/?5+crontab
+
+
+7 Bug reports
+=============
+
+  If you think you found a bug in *micron* or in its documentation,
+  please send a mail to [Sergey Poznyakoff] or use the bug tracker at
+  [https://puszcza.gnu.org.ua/bugs/?group=micron] (requires
+  authorization).
+
+
+  [Sergey Poznyakoff] mailto:gray@gnu.org
+
+
+8 Copyright
+===========
+
+  Copyright (C) 2020 Sergey Poznyakoff
+
+  Permission is granted to anyone to make or distribute verbatim copies
+  of this document as received, in any medium, provided that the
+  copyright notice and this permission notice are preserved, thus giving
+  the recipient permission to redistribute in turn.
+
+  Permission is granted to distribute modified versions of this
+  document, or of portions of it, under the above conditions, provided
+  also that they carry prominent notices stating who last changed them.
