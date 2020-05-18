@@ -45,6 +45,7 @@ struct cronjob {
     int syslog_facility;
     char *syslog_tag; 
     unsigned refcnt;           /* Number of times this entry is referenced */
+    unsigned runcnt;           /* Number of instances running */
 };
 
 static inline void
@@ -177,9 +178,10 @@ enum {
 };
 
 /* Important environment variables */
-#define ENV_SYSLOG_EVENTS "SYSLOG_FACILITY"
+#define ENV_SYSLOG_FACILITY "SYSLOG_FACILITY"
 #define ENV_JOB_ALLOW_MULTIPLE "JOB_ALLOW_MULTIPLE"
 #define ENV_LOGNAME "LOGNAME"
+#define ENV_USER "USER"
 #define ENV_HOME "HOME"
 #define ENV_SHELL "SHELL"
 #define ENV_MAILTO "MAILTO"

@@ -184,7 +184,7 @@ runner_start(struct cronjob *job)
     /* Check the eventual multiple use */
     pt = proctab_lookup_job(job);
     if (pt) {
-	if (!job->allow_multiple) {
+	if (job->allow_multiple <= 1) {
 	    micron_log(LOG_ERR,
 		       "won't start \"%s\": previous instance "
 		       "is still running (PID %lu)",
@@ -192,13 +192,21 @@ runner_start(struct cronjob *job)
 		       (unsigned long)pt->pid);
 	    cronjob_unref(job);
 	    return;
-	}
-	micron_log(LOG_WARNING,
-		   "starting \"%s\": %u instances already running",
-		   job->command,
-		   job->refcnt - 1);
+	} else if (job->allow_multiple == job->runcnt) {
+	    micron_log(LOG_ERR,
+		       "won't start \"%s\": %u instances already running",
+		       job->command,
+		       job->runcnt);
+	    cronjob_unref(job);
+	    return;
+	} else 	    
+	    micron_log(LOG_WARNING,
+		       "starting \"%s\": %u instances already running",
+		       job->command,
+		       job->runcnt);
     }
-
+    job->runcnt++;
+    
     if (job->syslog_facility) {
 	if (pipe(p)) {
 	    micron_log(LOG_ERR, "pipe: %s", strerror(errno));
@@ -408,6 +416,7 @@ cron_thr_cleaner(void *ptr)
 	}
 
 	if (pt->type == PROCTAB_COMM) {
+	    pt->job->runcnt--;
 	    if (WIFEXITED(status)) {
 		int code = WEXITSTATUS(status);
 		micron_log(LOG_DEBUG, "exit=%d, command=\"%s\"",
@@ -537,14 +546,7 @@ cron_thr_logger(void *arg)
 	pthread_mutex_lock(&logger_mutex);
 	LIST_FOREACH_SAFE(bp, prev, &logger_queue, link) {
 	    if (FD_ISSET(bp->fd, &rds)) {
-		if (bp->overflow) {
-		    char c;
-		    n = read(bp->fd, &c, 1);
-		    if (n <= 0 || (n == 1 && c == '\n')) {
-			bp->overflow = 0;
-			continue;
-		    }
-		} else if (bp->level == bp->size) {
+		if (bp->level == bp->size) {
 		    if (bp->size >= MICRON_LOG_BUF_SIZE) {
 			bp->overflow = 1;
 			bp->level--;
@@ -555,14 +557,13 @@ cron_thr_logger(void *arg)
 			if (p == NULL) {
 			    bp->overflow = 1;
 			    logbuf_flush(bp, 1);
-			    continue;
-			}
-			bp->buffer = p;
+			} else
+			    bp->buffer = p;
 		    }
 		}
 
 		n = read(bp->fd, bp->buffer + bp->level, bp->size - bp->level);
-		
+
 		if (n <= 0) {
 		    logbuf_flush(bp, 1);
 		    close(bp->fd);
@@ -571,8 +572,23 @@ cron_thr_logger(void *arg)
 		    free(bp->buffer);
 		    free(bp);
 		    reinit = 1;
-		} else {
+		} else {		    
 		    bp->level += n;
+		    if (bp->overflow) {
+			char *p = memchr(bp->buffer, '\n', bp->level);
+			if (p) {
+			    size_t len;
+			    p++;
+			    len = bp->level - (p - bp->buffer);
+			    if (len)
+				memmove(bp->buffer, p, len);
+			    bp->level = len;
+			    bp->overflow = 0;
+			} else {
+			    bp->level = 0;
+			    continue;
+			}
+		    }
 		    logbuf_flush(bp, 0);
 		}
 	    }

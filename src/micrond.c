@@ -752,7 +752,8 @@ cronjob_head_remove(int fileid)
 }
 
 static struct cronjob *
-cronjob_alloc(int fileid, int type,
+cronjob_alloc(struct cronjob const *hints,
+	      int fileid, int type,
 	      struct micronexp const *schedule,
 	      struct passwd const *pwd,
 	      char const *command, struct micron_environ *env)
@@ -762,7 +763,10 @@ cronjob_alloc(int fileid, int type,
     
     job = calloc(1, size);
     if (job) {
-	memset(job, 0, size);
+	if (hints)
+	    memcpy(job, hints, sizeof(*job));
+	else
+	    memset(job, 0, sizeof(*job));
 	job->type = type;
 	job->fileid = fileid;
 	job->schedule = *schedule;
@@ -836,7 +840,6 @@ static struct crontab *
 crontab_find(struct crongroup *cgrp, char const *filename, int alloc)
 {
     struct crontab *cp;
-    struct micron_environ *env;
     
     LIST_FOREACH(cp, &crontabs, list) {
 	if (cp->crongroup == cgrp && strcmp(cp->filename, filename) == 0)
@@ -854,12 +857,7 @@ crontab_find(struct crongroup *cgrp, char const *filename, int alloc)
     strcpy(cp->filename, filename);
     cp->mtime = (time_t) -1;
     list_head_init(&cp->env_head);
-    env = micron_environ_alloc(&cp->env_head);
-    if (syslog_enable)
-	// Note: The following call won't update the ebuf value, since
-	// the environment is still empty.
-	micron_environ_set(&env, ENV_SYSLOG_EVENTS,
-			   micron_log_fac_to_str(syslog_facility));    
+    micron_environ_alloc(&cp->env_head);
     LIST_HEAD_PUSH(&crontabs, cp, list);
     
     return cp;
@@ -1214,41 +1212,101 @@ copy_unquoted(char *dst, char const *src)
     *dst = 0;
     return 0;
 }
-
+
 static int
-parse_syslog_facility(char const *str, int *pf)
+parse_env_syslog_facility(char const *val, struct cronjob *job, char **errmsg)
 {
     int n;
     
-    if (*str == 0 ||
-	strcasecmp(str, "off") == 0 ||
-	strcasecmp(str, "none") == 0)
-	return 0;
-    else if (strcasecmp(str, "default") == 0) {
-	*pf = syslog_facility;
-	return 1;
-    } else if ((n = micron_log_str_to_fac(str)) != -1) {
-	*pf = n;
+    if (*val == 0 ||
+	strcasecmp(val, "off") == 0 ||
+	strcasecmp(val, "none") == 0)
+	n = 0;
+    else if (strcasecmp(val, "default") == 0)
+	n = syslog_facility;
+    else
+	n = micron_log_str_to_fac(val);
+
+    if (n == -1) {
+	*errmsg = "invalid value for builtin variable";
 	return 1;
     }
-    return -1;
+
+    job->syslog_facility = n;
+    return 0;
 }
 
 static int
-check_var(char const *def)
+parse_env_job_allow_multiple(char const *val, struct cronjob *job,
+			     char **errmsg)
 {
-    static char syslog_var[] = ENV_SYSLOG_EVENTS;
-    static size_t syslog_var_len = sizeof(syslog_var_len)-1;
-    
-    if (strncmp(def, syslog_var, syslog_var_len) == 0
-	&& def[syslog_var_len] == '=') {
-	int n;
-	
-	def += syslog_var_len + 1;
-	if (parse_syslog_facility(def, &n) == -1)
-	    return 1;
+    char *endp;
+    unsigned long n;
+    errno = 0;
+    n = strtoul(val, &endp, 10);
+    if (errno || *endp) {
+	*errmsg = "not a valid number";
+	return 1;
     }
+    job->allow_multiple = (int) n;
     return 0;
+}
+
+static int
+parse_cron_day_semantics(char const *val, struct cronjob *job, char **errmsg)
+{
+    int i;
+
+    for (i = 0; i < MAX_MICRON_DAY; i++) {
+	if (strcasecmp(val, micron_dsem_str[i]) == 0) {
+	    job->schedule.dsem = i;
+	    return 0;
+	}
+    }
+    *errmsg = "unknown day semantics value";
+    return 1;
+}
+
+static int
+parse_rovar(char const *val, struct cronjob *job, char **errmsg)
+{
+    *errmsg = "assignment to a read-only variable";
+    return 1;
+}
+
+static struct vardef {
+    char *name;
+    int len;
+    int (*parser)(char const *, struct cronjob *, char **);
+} vardef[] = {
+#define S(s) s, sizeof(s)-1
+    { S(ENV_SYSLOG_FACILITY), parse_env_syslog_facility },
+    { S(ENV_JOB_ALLOW_MULTIPLE), parse_env_job_allow_multiple },
+    { S(ENV_CRON_DAY_SEMANTICS), parse_cron_day_semantics },
+    { S(ENV_LOGNAME), parse_rovar },
+    { S(ENV_USER), parse_rovar },
+    { NULL }
+};
+
+enum {
+    PARSE_ENV_OK,
+    PARSE_ENV_BUILTIN,
+    PARSE_ENV_FAILURE
+};
+
+static int
+parse_env(char *def, struct cronjob *job, char **errmsg)
+{
+    struct vardef *vd;
+
+    for (vd = vardef; vd->name; vd++) {
+	if (strncmp(def, vd->name, vd->len) == 0 && def[vd->len] == '=') {
+	    return vd->parser(def + vd->len + 1, job, errmsg) == 0
+		     ? PARSE_ENV_OK
+		     : PARSE_ENV_FAILURE;
+	}
+    }
+    return PARSE_ENV_OK;
 }
 
 static inline int
@@ -1266,24 +1324,6 @@ is_reboot(char const *s, char **endp)
 }
 
 static int
-get_day_semantics(struct crontab const *cp)
-{
-    char const *str;
-    struct micron_environ const *env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
-
-    str = micron_environ_get(env, &cp->env_head, ENV_CRON_DAY_SEMANTICS);
-    if (str) {
-	int i;
-	for (i = 0; i < MAX_MICRON_DAY; i++) {
-	    if (strcasecmp(str, micron_dsem_str[i]) == 0)
-		return i;
-	}
-	return -1;
-    }
-    return MICRON_DAY_STRICT;
-}
-
-static int
 crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 {
     int fd;
@@ -1292,7 +1332,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
     char buf[MAXCRONTABLINE+1];
     size_t off;
     unsigned line = 0;
-    struct cronjob *job;
+    struct cronjob *job, job_hints;
     struct passwd *pwd;
     int env_cont = 1;
     struct micron_environ *env;
@@ -1353,6 +1393,12 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 
     /* Create initial environment */
     micron_environ_alloc(&cp->env_head);
+
+    /* Create job hints */
+    memset(&job_hints, 0, sizeof(job_hints));
+    job_hints.schedule.dsem = MICRON_DAY_STRICT;
+    job_hints.allow_multiple = 1;
+    job_hints.syslog_facility = syslog_enable ? syslog_facility : 0;
     
     off = 0;
     while (1) {
@@ -1361,9 +1407,9 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	struct micronexp schedule;
 	char *p;
 	char *user = NULL;
-	char const *ep;
 	int rc;
 	int name_len, val_start;
+	char *errmsg;
 	
 	if (off >= MAXCRONTABLINE)
 	    goto toolong;
@@ -1438,7 +1484,8 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 		continue;
 	    }
 
-	    if (check_var(var) == 0) {
+	    rc = parse_env(var, &job_hints, &errmsg);
+	    if (rc == PARSE_ENV_OK) {
 		env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
 		if (!env_cont) {
 		    env = micron_environ_alloc(&cp->env_head);
@@ -1449,12 +1496,12 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 		    free(var);
 		    break;
 		}
-	    } else {
-		micron_log(LOG_ERR,
-			   PRsCRONTAB ":%u: invalid builtin variable assignment",
-			   ARGCRONTAB(cgrp, filename), line);
+	    } else if (rc == PARSE_ENV_FAILURE) {
+		micron_log(LOG_ERR, PRsCRONTAB ":%u: %s",
+			   ARGCRONTAB(cgrp, filename), line, errmsg);
 		free(var);
-	    }
+	    } else /* PARSE_ENV_BUILTIN */
+		free(var);
 	    
 	    env_cont = 1;
 	    continue;
@@ -1464,7 +1511,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	if (is_reboot(p, &p)) {
 	    type = JOB_REBOOT;
 	} else {
-	    schedule.dsem = get_day_semantics(cp);
+	    schedule.dsem = job_hints.schedule.dsem;
 	    rc = micron_parse(p, &p, &schedule);
 	    if (rc) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: %s near %s",
@@ -1519,45 +1566,31 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	/* Finalize environment */
 	env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
 	
-	if (!micron_environ_get(env, &cp->env_head, "HOME")) 
-	    micron_environ_set(&env, "HOME", pwd->pw_dir);
-	if (!micron_environ_get(env, &cp->env_head, "SHELL")) 
-	    micron_environ_set(&env, "SHELL", "/bin/sh");
+	if (!micron_environ_get(env, &cp->env_head, ENV_HOME)) 
+	    micron_environ_set(&env, ENV_HOME, pwd->pw_dir);
+	if (!micron_environ_get(env, &cp->env_head, ENV_SHELL)) 
+	    micron_environ_set(&env, ENV_SHELL, "/bin/sh");
     
-	if (micron_environ_set(&env, "LOGNAME", pwd->pw_name)) {
+	if (micron_environ_set(&env, ENV_LOGNAME, pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cgrp, filename), line);
 	    break;
 	}
-	if (micron_environ_set(&env, "USER", pwd->pw_name)) {
+	if (micron_environ_set(&env, ENV_USER, pwd->pw_name)) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cgrp, filename), line);
 	    break;
 	}
 	    
-	job = cronjob_alloc(cp->fileid, type, &schedule, pwd, p, env);
+	job = cronjob_alloc(&job_hints, cp->fileid, type, &schedule,
+			    pwd, p, env);
 	if (!job) {
 	    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
 		       ARGCRONTAB(cgrp, filename), line);
 	    break;
 	}
 
-	ep = micron_environ_get(env, &cp->env_head, ENV_JOB_ALLOW_MULTIPLE);
-	if (ep) {
-	    char *endp;
-	    unsigned long n;
-	    errno = 0;
-	    n = strtoul(ep, &endp, 2);
-	    if (errno || *endp) {
-		micron_log(LOG_ERR, PRsCRONTAB ":%u: unrecognized value",
-			   ARGCRONTAB(cgrp, filename), line);
-	    } else
-		job->allow_multiple = (int) n;
-	}
-
-	ep = micron_environ_get(env, &cp->env_head, ENV_SYSLOG_EVENTS);
-	if ((ep && parse_syslog_facility(ep, &job->syslog_facility) == 1) ||
-	    (syslog_enable && (job->syslog_facility = LOG_CRON))) {
+	if (job->syslog_facility) {
 	    char *tag;
 	    int cmdlen = strcspn(job->command, " \t");
 	    size_t len = strlen(cp->crongroup->dirname) +
@@ -1611,7 +1644,7 @@ crontab_scanner_schedule(void)
 	    return;
     }
     micron_parse("* * * * *", NULL, &schedule);
-    cp = cronjob_alloc(-1, JOB_INTERNAL, &schedule,
+    cp = cronjob_alloc(NULL, -1, JOB_INTERNAL, &schedule,
 		       NULL, "<internal scanner>", NULL);
     if (!cp) {
 	micron_log(LOG_ERR, "out of memory while installing internal scanner");

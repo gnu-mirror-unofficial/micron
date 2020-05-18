@@ -31,10 +31,10 @@
 
 static char *crondirname;
 static int crondirfd;
-static char *crontabfile = NULL;
+static char const *crontabfile = NULL;
 static int group_opt = 0;
 static int interactive_opt = 0;
-static char *username = NULL;
+static char const *username = NULL;
 static gid_t crongroup_id;
 
 static char *catfilename(char const *dir, char const *file);
@@ -146,6 +146,25 @@ usage(int ex)
     exit(ex);
 }
 
+static char const *
+logname(void)
+{
+    static char *s;
+    if (!s) {
+	struct passwd *pwd = getpwuid(getuid());
+	if (!pwd) {
+	    terror("who am I?");
+	    exit(EXIT_FATAL);
+	}
+	s = strdup(pwd->pw_name);
+	if (!s) {
+	    terror("out of memory");
+	    exit(EXIT_FATAL);
+	}
+    }
+    return s;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -209,12 +228,7 @@ main(int argc, char **argv)
 	    exit(EXIT_FATAL);
 	}
     } else {
-	pwd = getpwuid(getuid());
-	if (!pwd) {
-	    terror("who am I?");
-	    exit(EXIT_FATAL);
-	}
-	username = strdup(pwd->pw_name);
+	username = logname();
     }
 
     if (group_opt) {
@@ -251,9 +265,9 @@ main(int argc, char **argv)
 
 	if (getgid() != crongroup_id && getuid() != 0) {
 	    int i;
-	    char *logname = getenv("LOGNAME");
+	    char const *name = logname();
 	    for (i = 0; grp->gr_mem[i]; i++)
-		if (strcmp(grp->gr_mem[i], logname) == 0)
+		if (strcmp(grp->gr_mem[i], name) == 0)
 		    break;
 	    if (!grp->gr_mem[i]) {
 		terror("you are not allowed to use crongroup %s",
@@ -293,7 +307,7 @@ main(int argc, char **argv)
 		   strerror(errno));
 	    exit(EXIT_FATAL);
 	}
-	crontabfile = getenv("LOGNAME");
+	crontabfile = logname();
 	umask(077);
     }
     return command_action[command](argc, argv);
