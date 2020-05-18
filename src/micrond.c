@@ -130,12 +130,17 @@ enum {
 int foreground;
 int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
-int syslog_enable;
-int syslog_facility = LOG_CRON;
 int log_level = LOG_INFO;
 
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
+static struct cronjob_options micron_options = {
+    .dsem = MICRON_DAY_STRICT,
+    .maxinstances = 1,
+    .syslog_facility = 0
+};    
+
+static void set_crontab_options(char *str);
 
 static int crongroup_init(struct crongroup *cgrp);
 int crongroup_parse(struct crongroup *cgrp, int ifmod);
@@ -232,7 +237,7 @@ crongroup_option(char const *arg)
 static void
 usage(void)
 {
-    printf("usage: %s [-Nfs] [-F FAC] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-p DEV]\n", progname);
+    printf("usage: %s [-Nfs] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-o OPTS] [-p DEV]\n", progname);
     printf("A cron deamon\n");
     printf("\nOPTIONS:\n\n");
     printf("    -N              disable safety checking (for debugging only!)\n");
@@ -243,11 +248,13 @@ usage(void)
     printf("    -g [no]GROUP    enable or disable crontab group GROUP\n");
     printf("    -l PRI          log only messages with syslog priority PRI or higher\n");
     printf("    -m MAILER       set mailer command\n");
+    printf("    -o OPTS         set crontab options\n");
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
     printf("    -h              print this help text\n");
     printf("    -v              print program version and exit\n");
     printf("\n");
     printf("Valid crontab groups are: master, system, user, and group.\n\n");
+    printf("OPTS is a comma-separated list of crontab options.\n\n");
     printf("Syslog SOCKET can be either an absolute name of a UNIX socket or\n");
     printf("a host name or IPv4 address optionally followed by a colon and port\n");
     printf("number or service name.\n");
@@ -265,7 +272,7 @@ main(int argc, char **argv)
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:F:fNl:m:p:sv")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:p:sv")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -295,21 +302,16 @@ main(int argc, char **argv)
 	    foreground = 1;
 	    break;
 
+	case 'o':
+	    set_crontab_options(optarg);
+	    break;
+
 	case 'p':
 	    micron_log_dev = optarg;
 	    break;
 	    
 	case 's':
-	    syslog_enable = 1;
-	    break;
-
-	case 'F':
-	    syslog_facility = micron_log_str_to_fac(optarg);
-	    if (syslog_facility == -1) {
-		micron_log(LOG_CRIT, "unknown syslog facility %s", optarg);
-		exit(EXIT_USAGE);
-	    }
-	    syslog_enable = 1;
+	    micron_options.syslog_facility = LOG_CRON;
 	    break;
 
 	case 'v':
@@ -350,7 +352,7 @@ main(int argc, char **argv)
 	}
 	micron_log_open(progname, LOG_CRON);
 	micron_logger = micron_syslog;
-    } else if (syslog_enable)
+    } else if (micron_options.syslog_facility)
 	micron_log_open(progname, LOG_CRON);
 
     umask(077);
@@ -1219,17 +1221,6 @@ copy_unquoted(char *dst, char const *src)
     return 0;
 }
 
-static inline void
-cronjob_options_init(struct cronjob_options *opt)
-{
-    opt->perjob = 0;
-    opt->dsem = MICRON_DAY_STRICT;
-    opt->maxinstances = 1;
-    opt->syslog_facility = syslog_enable ? syslog_facility : 0;
-    opt->syslog_tag = NULL;
-    opt->prev = NULL;
-}
-
 static int
 cronjob_options_ref(struct cronjob_options **popt)
 {
@@ -1278,7 +1269,7 @@ parse_env_syslog_facility(char const *val, struct cronjob_options *opt,
 	strcasecmp(val, "none") == 0)
 	n = 0;
     else if (strcasecmp(val, "default") == 0)
-	n = syslog_facility;
+	n = micron_options.syslog_facility;
     else
 	n = micron_log_str_to_fac(val);
 
@@ -1351,10 +1342,10 @@ static struct vardef {
     int (*parser)(char const *, struct cronjob_options *, char **);
 } vardef[] = {
 #define S(s) s, sizeof(s)-1
-    { S(ENV_SYSLOG_FACILITY), 1, parse_env_syslog_facility },
-    { S(ENV_SYSLOG_TAG),      1, parse_env_syslog_tag },
-    { S(ENV_MAXINSTANCES),    1, parse_env_maxinstances },
-    { S(ENV_DAY_SEMANTICS),   1, parse_day_semantics },
+    { S(BUILTIN_SYSLOG_FACILITY), 1, parse_env_syslog_facility },
+    { S(BUILTIN_SYSLOG_TAG),      1, parse_env_syslog_tag },
+    { S(BUILTIN_MAXINSTANCES),    1, parse_env_maxinstances },
+    { S(BUILTIN_DAY_SEMANTICS),   1, parse_day_semantics },
     { S(ENV_LOGNAME),         0, parse_rovar },
     { S(ENV_USER),            0, parse_rovar },
     { NULL }
@@ -1373,9 +1364,9 @@ parse_env(char *def, struct cronjob_options **opt, char **errmsg)
     int builtin = 0;
     int perjob = 0;
     
-    static char micron_prefix[] = "_MICRON";
+    static char micron_prefix[] = "_MICRON_";
     static int micron_prefix_len = sizeof(micron_prefix) - 1;
-    static char job_prefix[] = "_JOB";
+    static char job_prefix[] = "_JOB_";
     static int job_prefix_len = sizeof(job_prefix) - 1;
     
     if (strncmp(def, micron_prefix, micron_prefix_len) == 0) {
@@ -1411,7 +1402,42 @@ parse_env(char *def, struct cronjob_options **opt, char **errmsg)
     
     return PARSE_ENV_OK;
 }
+
+static struct vardef const *
+vardef_locate(char const *str, char **start)
+{
+    struct vardef *vd;
+    for (vd = vardef; vd->name; vd++) {
+	if (vd->builtin == 1 &&
+	    strncasecmp(str, vd->name, vd->len) == 0 && str[vd->len] == '=') {
+	    *start = (char*)str + vd->len + 1;
+	    return vd;
+	}
+    }
+    return NULL;
+}
 
+static void
+set_crontab_options(char *str)
+{
+    char *p;
+    
+    for (p = strtok(str, ","); p; p = strtok(NULL, ",")) {
+	struct vardef const *vd;
+	char *start, *errmsg;
+
+	if ((vd = vardef_locate(p, &start)) == NULL) {
+	    micron_log(LOG_ERR, "unknown option: %s", p);
+	    exit(EXIT_USAGE);
+	}
+
+	if (vd->parser(start, &micron_options, &errmsg)) {
+	    micron_log(LOG_ERR, "%s: %s", p, errmsg);
+	    exit(EXIT_USAGE);
+	}
+    }
+}
+
 static inline int
 is_reboot(char const *s, char **endp)
 {
@@ -1499,8 +1525,8 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
     micron_environ_alloc(&cp->env_head);
 
     /* Initialize options */
+    options = micron_options;
     opt = &options;
-    cronjob_options_init(opt);
     
     off = 0;
     while (1) {

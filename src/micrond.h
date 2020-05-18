@@ -172,8 +172,6 @@ struct crongroup {
 
 extern struct list_head crongroup_head;
 extern char *mailer_command;
-extern int syslog_enable;
-extern int syslog_facility;
 extern int log_level;
 
 /* Return values from crontab safety checking and parsing functions */
@@ -185,12 +183,13 @@ enum {
     CRONTAB_FAILURE
 };
 
-/* Important environment variables */
-#define ENV_SYSLOG_FACILITY "_SYSLOG_FACILITY"
-#define ENV_SYSLOG_TAG "_SYSLOG_TAG"
-#define ENV_MAXINSTANCES "_MAXINSTANCES"
-#define ENV_DAY_SEMANTICS "_DAY_SEMANTICS"
+/* Built-in variable names */
+#define BUILTIN_SYSLOG_FACILITY "SYSLOG_FACILITY"
+#define BUILTIN_SYSLOG_TAG "SYSLOG_TAG"
+#define BUILTIN_MAXINSTANCES "MAXINSTANCES"
+#define BUILTIN_DAY_SEMANTICS "DAY_SEMANTICS"
 
+/* Important environment variables */
 #define ENV_LOGNAME "LOGNAME"
 #define ENV_USER "USER"
 #define ENV_HOME "HOME"
