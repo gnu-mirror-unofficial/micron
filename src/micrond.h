@@ -28,13 +28,22 @@ enum {
     JOB_REBOOT
 };
 
+struct cronjob_options {
+    int perjob;
+    int dsem;
+    unsigned maxinstances;
+    int syslog_facility;
+    char *syslog_tag;
+    struct cronjob_options *prev;
+};
+
 struct cronjob {
     int type;                  /* Type of this job */
     struct micronexp schedule; /* Time schedule expression */
     char *command;             /* Command to be run */
     uid_t uid;                 /* Run as this UID */ 
     gid_t gid;                 /* ... and GID */
-    unsigned allow_multiple;   /* Allow that many instances to run
+    unsigned maxinstances;     /* Allow that many instances to run
 				  simultaneously */
     struct micron_environ *env;/* Execution environment */ 
     struct timespec next_time; /* Next time this entry is to be run */
@@ -60,7 +69,6 @@ cronjob_unref(struct cronjob *cp)
     if (--cp->refcnt == 0) {
 	LIST_REMOVE(cp, list);
 	LIST_REMOVE(cp, runq);
-	free(cp->syslog_tag);
 	free(cp);
 	cp = NULL;
     }
@@ -178,14 +186,16 @@ enum {
 };
 
 /* Important environment variables */
-#define ENV_SYSLOG_FACILITY "SYSLOG_FACILITY"
-#define ENV_JOB_ALLOW_MULTIPLE "JOB_ALLOW_MULTIPLE"
+#define ENV_SYSLOG_FACILITY "_SYSLOG_FACILITY"
+#define ENV_SYSLOG_TAG "_SYSLOG_TAG"
+#define ENV_MAXINSTANCES "_MAXINSTANCES"
+#define ENV_DAY_SEMANTICS "_DAY_SEMANTICS"
+
 #define ENV_LOGNAME "LOGNAME"
 #define ENV_USER "USER"
 #define ENV_HOME "HOME"
 #define ENV_SHELL "SHELL"
 #define ENV_MAILTO "MAILTO"
-#define ENV_CRON_DAY_SEMANTICS "CRON_DAY_SEMANTICS"
 
 void crongroups_parse_all(int ifmod);
 

@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 5 "May 15, 2020" "CRONTAB" "File Formats Manual"
+.TH CRONTAB 5 "May 18, 2020" "CRONTAB" "File Formats Manual"
 .SH NAME
 crontab \- tables for driving micrond
 .SH DESCRIPTION
@@ -175,7 +175,7 @@ settings (see below) and runs the command using the shell defined by
 the \fBSHELL\fR variable (\fB/bin/sh\fR by default).
 .SS Variable settings
 Variable settings modify execution environment for subsequent cron
-commands.   Some variables are internal to \fBmicrond\fR and modify
+commands.  Some variables are internal to \fBmicrond\fR and modify
 its behavior.  A variable setting has the form
 .PP
    \fIname\fR = \fIvalue\fR
@@ -201,17 +201,15 @@ invoke the script from the cron command.
 A variable setting applies to all cron commands that follow it, until
 another setting overwrites it or the end of file is encountered.
 .PP
-The following variables modify the behavior of \fBmicrond\fR itself.
+The following variables are \fIbuilt-in variables\fR.  They modify
+handing of the cron commands that follow them, but are not copied to
+the command environment.  Varables prefixed with \fB_JOB_\fR
+affect only cron command that follows them, whereas variables prefixed
+with \fB_MICRON_\fR affect all commands that follow them, until
+another assignment of the same variable is encountered or the end of
+file is reached.
 .TP
-.B MAILTO
-Defines an email address or a comma-delimited list of email addresses.
-If any of the cron commands that follow this setting produces anything on
-its standard output or standard error, the output will be collected
-and mailed to the users listed in the \fBMAILTO\fR variable.  If the
-variable is undefined, the output will be sent to the owner of the
-crontab.  If \fBMAILTO\fR is set to an empty string, no mail will be sent.
-.TP
-.B SYSLOG_FACILITY
+.BR _MICRON_SYSLOG_FACILITY ", " _JOB_SYSLOG_FACILITY
 If this variable is set to a meaningful syslog facility, the program
 output will be logged to that facility (priority \fBINFO\fR), instead
 of mailing it the usual way.
@@ -242,13 +240,22 @@ or
 disable syslog and revert to mailing the program output as directed by
 the \fBMAILTO\fR variable.
 .TP
-.B JOB_ALLOW_MULTIPLE
-An integer value defining how many copies of a cron job can be running
-simultaneously.  Default is 0, i.e. \fBmicrond\fR will refuse to start
-a job if its previous run has not yet terminated.
+.B _JOB_SYSLOG_TAG
+Sets the syslog tag for the next cron command.  The tag is used only if
+syslog is enabled (by the use of \fB\-s\fR option or by the
+\fBSYSLOG_FACILITY\fR setting).  If not specified, the tag will be
+constructed as \fIFILE\fB:\fILINE\fB(\fIPROG\fB)\fR, where
+\fIFILE\fR and \fILINE\fR are the file name and line number of the
+line where the cron command appeared and \fIPROG\fR is the first word
+of the command.
 .TP
-.B CRON_DAY_SEMANTICS
-Defines the day semantics for the lines that follow.  Allowed values are:
+.BR _MICRON_MAXINSTANCES ", " _JOB_MAXINSTANCES
+An integer value defining how many instances of the same cron job can
+be running simultaneously.  Default is 1, i.e. \fBmicrond\fR will
+refuse to start a job if its previous run has not yet terminated.
+.TP
+.BR _MICRON_DAY_SEMANTICS ", " _JOB_DAY_SEMANTICS
+Defines the day semantics.  Allowed values are:
 .BR strict ,
 .BR vixie ,
 and
@@ -258,6 +265,17 @@ The default is
 See the discussion of day semantics in the subsection
 .B "Cron commands"
 for a detailed description.
+.PP
+The following variables modify the behavior of \fBmicrond\fR itself.
+.TP
+.B MAILTO
+Defines an email address or a comma-delimited list of email addresses.
+If any of the cron commands that follow this setting produces anything on
+its standard output or standard error, the output will be collected
+and mailed to the users listed in the \fBMAILTO\fR variable.  If the
+variable is undefined, the output will be sent to the owner of the
+crontab.  If \fBMAILTO\fR is set to an empty string, no mail will be
+sent.
 .TP
 .B HOME
 Defines the working directory from which the subsequent commands will
@@ -292,10 +310,10 @@ entries is mailed to two different users:
 Job output can be logged to syslog, instead of mailing it to the
 user.  This can happen both globally (see the \fB\-s\fR option to
 \fBmicrond\fR), or individually in a crontab (see the
-\fBSYSLOG_FACILITY\fR) variable.
+\fB_MICRON_SYSLOG_FACILITY\fR) variable.
 .IP \n+[step].
 Number of simultaneous instances of a single cron job is limited.
-It is configurable using the \fBJOB_ALLOW_MULTIPLE\fR variable.
+It is configurable using the \fB_MICRON_MAXINSTANCES\fR variable.
 This differs both from Vixie implementation, where a job is started no
 matter how many of its instances are running, and from Dillon's cron,
 which refuses to start a job until its prior instance has terminated.

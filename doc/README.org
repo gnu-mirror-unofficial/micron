@@ -89,6 +89,30 @@ along with the newline and the content of the next line is appended in
 its place.  Miltiple line continuations are allowed, as long as the
 total line length does not exceed 1024 characters.
 
+** Built-in variables
+
+A number of built-in variables control the interpretation of crontab
+entries and execution of commands.  Each built-in variable has two
+name variants: the name prefixed with =_JOB= affects only the cron job
+definition that immediately follows it (with optional variable
+assignments in between), whereas the name prefixed with
+=_MICRON= affects all commands that follow them, until another
+assignment of the same variable is encountered or the end of 
+file is reached.  For example, the following fragment instructs
+*micrond* to log all output produced by the command =run-periodic= to 
+syslog facility =daemon= using the tag "hourly".  These two settings 
+affect only this particular command:
+
+#+BEGIN_SRC crontab
+_JOB_SYSLOG_FACILITY = daemon
+_JOB_SYSLOG_TAG = hourly
+
+15 * * * *  root  run-periodic
+#+END_SRC
+
+The built-in variables are described in detail in the sections that
+follow.  For brevity, they are referred to using the =_MICRON= prefix.
+
 ** The day field semantics
 
 In a crontab schedule, the day of a command's execution can be
@@ -114,11 +138,11 @@ The semantics used by *micron* is configurable.  By default it assumes
 the two fields to be joined by a logical AND, i.e. the example above
 would mean "each first and fourth day of the month *if* the day of
 week is Monday, Tuesday or Wednesday".  The use of Vixie or Dillon
-semantics can be requested by setting the =CRON_DAY_SEMANTICS=
+semantics can be requested by setting the =_MICRON_DAY_SEMANTICS=
 variable in the crontab.  For example, the line
 
 #+BEGIN_SRC crontab
-  CRON_DAY_SEMANTICS = Vixie
+  _MICRON_DAY_SEMANTICS = Vixie
 #+END_SRC
 
 requests the semantics used by Vixie cron.
@@ -144,12 +168,19 @@ Output of a crontab job can be either mailed to its owner (a
 traditional behavior) or reported via *syslog* to an arbitrary
 facility.  This can be configured both globally (by the *-s* command
 line option), or individually in a crontab (using the
-=BSYSLOG_FACILITY= variable).
+=_MICRON_SYSLOG_FACILITY= variable).  Syslog tag can be supplied 
+using the =_MICRON_SYSLOG_TAG= variable.  In its absense, syslog tag is
+constructed from the location of the job in the crontab file and 
+first word of the command, e.g.:
+
+#+BEGIN_SRC
+    /etc/crontab:14(run-parts)
+#+END_SRC
 
 ** Simultaneous job execution
 
 Number of simultaneously running instances of a cron job is
-limited.  It is controlled by the value of the =JOB_ALLOW_MULTIPLE=
+limited.  It is controlled by the value of the =_MICRON_MAXINSTANCES=
 variable.  The default value is 1, which means that the job won't be
 started until its previous instance terminates.  This differs both
 from Vixie implementation, where a job is started no matter how many

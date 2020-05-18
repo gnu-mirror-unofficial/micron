@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH MICROND 8 "May 14, 2020" "MICROND" "System Manager's Manual"
+.TH MICROND 8 "May 18, 2020" "MICROND" "System Manager's Manual"
 .SH NAME
 micrond \- a minimal cron implementation
 .SH SYNOPSIS
@@ -61,7 +61,7 @@ send them to a particular syslog facility.  If so configured, the
 output is logged synchronously with the job execution.  The syslog
 configuration can be global, using the \fB\-s\fR and \fB\-F\fR command
 line options, per-crontab or even per-job, using the
-\fBSYSLOG_FACILITY\fR variable setting.
+\fB_MICRON_SYSLOG_FACILITY\fR variable setting.
 .PP
 On GNU/Linux systems, \fBmicrond\fR uses
 .BR inotify(7)

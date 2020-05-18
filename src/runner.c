@@ -184,7 +184,7 @@ runner_start(struct cronjob *job)
     /* Check the eventual multiple use */
     pt = proctab_lookup_job(job);
     if (pt) {
-	if (job->allow_multiple <= 1) {
+	if (job->maxinstances <= 1) {
 	    micron_log(LOG_ERR,
 		       "won't start \"%s\": previous instance "
 		       "is still running (PID %lu)",
@@ -192,7 +192,7 @@ runner_start(struct cronjob *job)
 		       (unsigned long)pt->pid);
 	    cronjob_unref(job);
 	    return;
-	} else if (job->allow_multiple == job->runcnt) {
+	} else if (job->maxinstances == job->runcnt) {
 	    micron_log(LOG_ERR,
 		       "won't start \"%s\": %u instances already running",
 		       job->command,

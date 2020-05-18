@@ -14,11 +14,12 @@ _________________
 3 Features
 .. 3.1 User group crontabs
 .. 3.2 Long crontab lines
-.. 3.3 The day field semantics
-.. 3.4 Variable assignment in crontabs
-.. 3.5 Job output report
-.. 3.6 Simultaneous job execution
-.. 3.7 Detection of crontab modifications
+.. 3.3 Built-in variables
+.. 3.4 The day field semantics
+.. 3.5 Variable assignment in crontabs
+.. 3.6 Job output report
+.. 3.7 Simultaneous job execution
+.. 3.8 Detection of crontab modifications
 4 Downloads and Installation
 5 The name
 6 References
@@ -127,7 +128,33 @@ _________________
   total line length does not exceed 1024 characters.
 
 
-3.3 The day field semantics
+3.3 Built-in variables
+~~~~~~~~~~~~~~~~~~~~~~
+
+  A number of built-in variables control the interpretation of crontab
+  entries and execution of commands.  Each built-in variable has two
+  name variants: the name prefixed with `_JOB' affects only the cron job
+  definition that immediately follows it (with optional variable
+  assignments in between), whereas the name prefixed with `_MICRON'
+  affects all commands that follow them, until another assignment of the
+  same variable is encountered or the end of file is reached.  For
+  example, the following fragment instructs *micrond* to log all output
+  produced by the command `run-periodic' to syslog facility `daemon'
+  using the tag "hourly".  These two settings affect only this
+  particular command:
+
+  ,----
+  | _JOB_SYSLOG_FACILITY = daemon
+  | _JOB_SYSLOG_TAG = hourly
+  | 
+  | 15 * * * *  root  run-periodic
+  `----
+
+  The built-in variables are described in detail in the sections that
+  follow.  For brevity, they are referred to using the `_MICRON' prefix.
+
+
+3.4 The day field semantics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   In a crontab schedule, the day of a command's execution can be
@@ -153,17 +180,17 @@ _________________
   the two fields to be joined by a logical AND, i.e. the example above
   would mean "each first and fourth day of the month *if* the day of
   week is Monday, Tuesday or Wednesday".  The use of Vixie or Dillon
-  semantics can be requested by setting the `CRON_DAY_SEMANTICS'
+  semantics can be requested by setting the `_MICRON_DAY_SEMANTICS'
   variable in the crontab.  For example, the line
 
   ,----
-  | CRON_DAY_SEMANTICS = Vixie
+  | _MICRON_DAY_SEMANTICS = Vixie
   `----
 
   requests the semantics used by Vixie cron.
 
 
-3.4 Variable assignment in crontabs
+3.5 Variable assignment in crontabs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   Variable assignments can appear anyplace in a crontab.  The modified
@@ -180,21 +207,28 @@ _________________
   `----
 
 
-3.5 Job output report
+3.6 Job output report
 ~~~~~~~~~~~~~~~~~~~~~
 
   Output of a crontab job can be either mailed to its owner (a
   traditional behavior) or reported via *syslog* to an arbitrary
   facility.  This can be configured both globally (by the *-s* command
   line option), or individually in a crontab (using the
-  `BSYSLOG_FACILITY' variable).
+  `_MICRON_SYSLOG_FACILITY' variable).  Syslog tag can be supplied using
+  the `_MICRON_SYSLOG_TAG' variable.  In its absense, syslog tag is
+  constructed from the location of the job in the crontab file and first
+  word of the command, e.g.:
+
+  ,----
+  | /etc/crontab:14(run-parts)
+  `----
 
 
-3.6 Simultaneous job execution
+3.7 Simultaneous job execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   Number of simultaneously running instances of a cron job is limited.
-  It is controlled by the value of the `JOB_ALLOW_MULTIPLE' variable.
+  It is controlled by the value of the `_MICRON_MAXINSTANCES' variable.
   The default value is 1, which means that the job won't be started
   until its previous instance terminates.  This differs both from Vixie
   implementation, where a job is started no matter how many of its
@@ -202,7 +236,7 @@ _________________
   a job until its prior instance has terminated.
 
 
-3.7 Detection of crontab modifications
+3.8 Detection of crontab modifications
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   On GNU/Linux systems, *micron* uses [inotify](8) to track crontab
