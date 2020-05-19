@@ -307,7 +307,7 @@ main(int argc, char **argv)
 		   strerror(errno));
 	    exit(EXIT_FATAL);
 	}
-	crontabfile = logname();
+	crontabfile = username;
 	umask(077);
     }
     return command_action[command](argc, argv);

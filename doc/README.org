@@ -12,9 +12,9 @@ and the *crontab* utility.
 
 The instructions specifying what commands to run and when are kept in
 a set *crontab* files.  *Micrond* reads crontabs at startup and loads
-them to memory.  During its runtime it keeps track of crontab
-modifications and updates its in-memory tables as soon as a
-modification is detected.
+them to memory.  At runtime it keeps track of crontab modifications
+and updates its in-memory tables as soon as a modification is
+detected.
 
 The crontabs are stored in several locations, collectively know as
 crontab groups:
@@ -86,7 +86,7 @@ Very long crontab lines can be split across several physical lines
 using the familiar backslash continuation technique: a backslash
 appearing immediately before the ending newline character is removed
 along with the newline and the content of the next line is appended in
-its place.  Miltiple line continuations are allowed, as long as the
+its place.  Multiple line continuations are allowed, as long as the
 total line length does not exceed 1024 characters.
 
 ** Built-in variables
@@ -169,7 +169,7 @@ traditional behavior) or reported via *syslog* to an arbitrary
 facility.  This can be configured both globally (by the *-s* command
 line option), or individually in a crontab (using the
 =_MICRON_SYSLOG_FACILITY= variable).  Syslog tag can be supplied 
-using the =_MICRON_SYSLOG_TAG= variable.  In its absense, syslog tag is
+using the =_MICRON_SYSLOG_TAG= variable.  In its absence, syslog tag is
 constructed from the location of the job in the crontab file and 
 first word of the command, e.g.:
 
