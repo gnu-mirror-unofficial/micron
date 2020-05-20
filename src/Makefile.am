@@ -34,6 +34,7 @@ libmicron_a_SOURCES =\
  micron_log.h\
  tempfile.c\
  progname.c\
+ patmatch.c\
  list.h
 
 noinst_HEADERS = defs.h

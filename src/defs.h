@@ -42,5 +42,8 @@ extern char *progname;
 int create_temp_file(int dirfd, char *filename, size_t suflen, int isdir);
 void set_progname(char *arg0);
 void version(void);
+int patmatch(char const **patterns, const char *name);
+int is_ignored_file_name(char const *name);
+extern char const *ignored_file_patterns[];
 
 

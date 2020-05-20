@@ -33,13 +33,6 @@
 #include <ctype.h>
 #include "micrond.h"
 
-static char const *backup_file_table[] = {
-    ".*",
-    "*~",
-    "#*#",
-    NULL
-};
-
 struct crongroup crongroups[] = {
     {   /*
 	 * The master crongroup consists of a single /etc/crontab file.
@@ -64,7 +57,7 @@ struct crongroup crongroups[] = {
 	.type = CGTYPE_DEFAULT,
 	.dirname = MICRON_CRONDIR_SYSTEM,
 	.dirfd = -1,
-	.exclude = backup_file_table,
+	.exclude = ignored_file_patterns,
 
 	.owner_name = "root",
 	.owner_group = "root",
@@ -80,7 +73,7 @@ struct crongroup crongroups[] = {
 	.type = CGTYPE_USER,
 	.dirname = MICRON_CRONDIR_USER,
 	.dirfd = -1,
-	.exclude = backup_file_table,
+	.exclude = ignored_file_patterns,
 
 	.owner_name = "root",
 	.owner_group = CRONTAB_GID,
@@ -101,7 +94,7 @@ struct crongroup crongroups[] = {
 	.type = CGTYPE_GROUPHOST,
 	.dirname = MICRON_CRONDIR_GROUP,
 	.dirfd = -1,
-	.exclude = backup_file_table,
+	.exclude = ignored_file_patterns,
 	.flags = CGF_DISABLED,
 
 	.owner_name = "root",
@@ -1784,16 +1777,6 @@ crontab_scanner_schedule(void)
 }
 
 static int
-patmatch(char const **patterns, const char *name)
-{
-    int i;
-    for (i = 0; patterns[i]; i++)
-	if (fnmatch(patterns[i], name, FNM_PATHNAME|FNM_PERIOD) == 0)
-	    return 1;
-    return 0;
-}
-
-static int
 mkdir_rec(char const *dirname)
 {
     struct stat st;
@@ -1983,7 +1966,7 @@ usercrongroup_add_unlocked(struct crongroup *host, char const *name)
     cgrp->type = CGTYPE_GROUP;
     cgrp->dirfd = -1;
     cgrp->pattern = NULL;
-    cgrp->exclude = backup_file_table;
+    cgrp->exclude = ignored_file_patterns;
     list_head_init(&cgrp->list);
     
     rc = crongroup_parse(cgrp, PARSE_ALWAYS);

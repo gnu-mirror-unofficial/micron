@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 1 "May 14, 2020" "CRONTAB" "General Commands Manual"
+.TH CRONTAB 1 "May 20, 2020" "CRONTAB" "General Commands Manual"
 .SH NAME
 crontab \- manipulate per-user and user-group crontabs 
 .SH SYNOPSIS
@@ -95,7 +95,10 @@ Edit crontab.
 Interactively ask before removing or replacing.
 .TP
 .B \-l
-List crontab.
+List crontab content.  When used with the \fB\-g\fR option, this
+option lists the content of the crontab \fIFILE\fR in the group.  If
+\fIFILE\fR is not supplied, displays the list of available crontabs in
+the group, along with their owners.
 .TP
 .B \-r
 Remove crontab.

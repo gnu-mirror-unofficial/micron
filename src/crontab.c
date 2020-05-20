@@ -28,6 +28,8 @@
 #include <grp.h>
 #include <dirent.h>
 #include "defs.h"
+#include "list.h"
+#include <fnmatch.h> // FIXME
 
 static char *crondirname;
 static int crondirfd;
@@ -114,6 +116,7 @@ static int command_install(int, char **);
 static int command_edit(int, char **);
 static int command_list(int, char **);
 static int command_remove(int, char **);
+static int usergrouplist(void);
 
 static int (*command_action[])(int, char **) = {
     command_install,
@@ -289,6 +292,8 @@ main(int argc, char **argv)
 	crondirname = catfilename(crondirname, username);
 	
 	if (argc < 1) {
+	    if (command == C_LIST)
+		return usergrouplist();
 	    terror("missing group file name");
 	    exit(EXIT_USAGE);
 	}
@@ -653,6 +658,137 @@ command_remove(int argc, char **argv)
 	terror("failed to unlink %s/%s: %s",
 	       crondirname, crontabfile, strerror(errno));
 	return EXIT_FATAL;
+    }
+    return EXIT_OK;
+}
+
+struct filedesc {
+    char *file;
+    char *owner;
+    struct list_head list;
+};
+
+static void
+filedesc_sorted_insert(struct filedesc *fdesc, struct list_head *head,
+		       size_t *pcount)
+{
+    struct filedesc *l, *m, *p;
+    size_t i, n, count = *pcount;
+    char const *filename = fdesc->file;
+    
+    if (count == 0)
+	l = NULL;
+    else {
+	l = LIST_FIRST_ENTRY(head, l, list);
+
+	if (strcmp(l->file, filename) > 0) {
+	    l = NULL;
+	} else if (strcmp((p = LIST_LAST_ENTRY(head, l, list))->file,
+			  filename) < 0) {
+	    l = p;
+	} else {
+	    while (count > 1) {
+		int c;
+
+		n = count / 2;
+		
+		i = 0;
+		LIST_FOREACH_FROM(m, l, head, list) {
+		    i++;
+		    if (i == n)
+			break;
+		}
+				
+		c = strcmp(m->file, filename);
+		if (c < 0) {
+		    l = m;
+		    count -= n;
+		} else {
+		    count = n;
+		}
+	    }
+	}
+    }
+
+    if (!l)
+	LIST_HEAD_INSERT_FIRST(head, fdesc, list);
+    else {
+	if ((p = LIST_NEXT_ENTRY(head, l, list)) &&
+	       strcmp(p->file, filename) < 0)
+	    l = p;
+	LIST_INSERT_AFTER(l, fdesc, list);
+    }
+
+    ++ *pcount;
+}
+
+static int
+usergrouplist(void)
+{
+    DIR *dir;
+    struct dirent *ent;
+    int fd;
+    int max_name_len = 0;
+    struct filedesc *fdesc;
+    
+    struct list_head ls_head = LIST_HEAD_INITIALIZER(ls_head);
+    size_t ls_count = 0;
+    
+    fd = open(crondirname, O_RDONLY | O_NONBLOCK | O_DIRECTORY);
+    if (fd == -1 || (dir = fdopendir(fd)) == NULL) {
+	terror("can't open directory %s: %s", crondirname, strerror(errno));
+	return EXIT_FATAL;
+    }
+	
+    while ((ent = readdir(dir)) != NULL) {
+	struct stat st;
+	struct passwd *pwd;
+	char *owner;
+	char ownerbuf[80];
+	int namelen;
+	
+	if (fstatat(fd, ent->d_name, &st, AT_SYMLINK_NOFOLLOW)) {
+	    terror("can't stat %s/%s: %s", crondirname, ent->d_name,
+		   strerror(errno));
+	    return EXIT_FATAL;
+	}
+	if (!S_ISREG(st.st_mode) ||
+	    is_ignored_file_name(ent->d_name) ||
+	    st.st_gid != crongroup_id)
+	    continue;
+
+	pwd = getpwuid(st.st_uid);
+	if (pwd)
+	    owner = pwd->pw_name;
+	else {
+	    snprintf(ownerbuf, sizeof(ownerbuf), "+%lu",
+		     (unsigned long) st.st_uid);
+	    owner = ownerbuf;
+	}
+	
+	namelen = strlen(ent->d_name);
+	if (namelen > max_name_len)
+	    max_name_len = namelen;
+	    
+	fdesc = malloc(sizeof(*fdesc) + namelen + strlen(owner) + 2);
+	if (!fdesc) {
+	    terror("out of memory");
+	    return EXIT_FATAL;
+	}
+
+	fdesc->file = (char*)(fdesc + 1);
+	strcpy(fdesc->file, ent->d_name);
+	fdesc->owner = fdesc->file + namelen + 1;
+	strcpy(fdesc->owner, owner);
+
+	filedesc_sorted_insert(fdesc, &ls_head, &ls_count);
+    }
+    closedir(dir);
+    
+    while ((fdesc = LIST_HEAD_POP(&ls_head, fdesc, list)) != NULL) {
+	printf("%-*.*s %s\n", max_name_len, max_name_len,
+	       fdesc->file, fdesc->owner);
+	free(fdesc);
     }
     return EXIT_OK;
 }
