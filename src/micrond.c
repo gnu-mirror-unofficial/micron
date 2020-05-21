@@ -544,14 +544,20 @@ struct micron_environ {
     size_t varc;     /* Number of variable settings in this environment */
     size_t varmax;   /* Max. count of variables */
     char **varv;     /* Variable settings */
+    int detached;    /* If true, this environment is detached from its
+			parent. This means that eventual flattening of any
+			of its children will stop at it. */
     struct list_head link; /* Links to parent and child environments */
 };
 
 #define MICRON_ENVIRON_INITIALIZER(n) \
-    { 0, 0, NULL, LIST_HEAD_INITIALIZER(n.link) }
+    { 0, 0, NULL, 0, LIST_HEAD_INITIALIZER((n).link) }
 
 static int micron_environ_set(struct micron_environ **ebuf, char const *name,
 			      const char *value);
+static int micron_environ_clone(struct micron_environ *dst,
+				struct micron_environ *src,
+				struct list_head *head);
 
 static void
 micron_environ_init(struct micron_environ *ebuf)
@@ -562,12 +568,21 @@ micron_environ_init(struct micron_environ *ebuf)
 }
 
 static struct micron_environ *
-micron_environ_alloc(struct list_head *head)
+micron_environ_create(void)
 {
     struct micron_environ *ebuf = malloc(sizeof(*ebuf));
     if (ebuf)
 	micron_environ_init(ebuf);
-    LIST_HEAD_PUSH(head, ebuf, link);
+    return ebuf;
+}
+
+static struct micron_environ *
+micron_environ_alloc(struct list_head *head)
+{
+    struct micron_environ *ebuf = micron_environ_create();
+    if (ebuf) {
+	LIST_HEAD_PUSH(head, ebuf, link);
+    }
     return ebuf;
 }
 
@@ -584,8 +599,9 @@ micron_environ_free(struct micron_environ *ebuf)
  * Otherwise, return -1.
  */
 static int
-micron_environ_find(struct micron_environ const *ebuf, char const *name,
-		    char ***ret)
+micron_environ_find(struct micron_environ const *ebuf,
+		      char const *name,
+		      char ***ret)
 {
     size_t len = strcspn(name, "=");
     size_t i;
@@ -600,6 +616,27 @@ micron_environ_find(struct micron_environ const *ebuf, char const *name,
 	}
     }
     return -1;
+}
+
+/*
+ * Given the incremental environment EBUF and the root of environment
+ * list HEAD, look up the variable NAME in it and all its parents.
+ * Return the value, or NULL if not found.
+ */
+static char const *
+micron_environ_get(struct micron_environ const *ebuf,
+		   struct list_head const *head,
+		   char const *name)
+{
+    struct micron_environ const *envp;
+    
+    LIST_FOREACH_FROM(envp, ebuf, head, link) {
+	char **pp;
+	if (micron_environ_find(envp, name, &pp) == 0) {
+	    return strchr(*pp, '=') + 1;
+	}
+    }
+    return NULL;
 }
 
 /*
@@ -632,6 +669,38 @@ micron_environ_set_var(struct micron_environ **ebuf, char *var)
     return micron_environ_append_var(*ebuf, var);
 }
 
+static int
+micron_environ_unset(struct list_head *head, char const *name)
+{
+    struct micron_environ *env = LIST_FIRST_ENTRY(head, env, link);
+    char **vptr;
+    
+    if (!env->detached) {
+	if (micron_environ_get(env, head, name)) {
+	    struct micron_environ *denv = micron_environ_create();
+	    if (!denv)
+		return -1;
+	    if (micron_environ_clone(denv, env, head)) {
+		micron_environ_free(denv);
+		return -1;
+	    }
+	    denv->detached = 1;
+	    LIST_HEAD_PUSH(head, denv, link);
+	    env = denv;
+	}
+    }
+
+    if (micron_environ_find(env, name, &vptr) == 0) {
+	size_t n;
+	
+	free(*vptr);
+	if ((n = env->varc - (vptr - env->varv) - 1) > 0)
+	    memmove(vptr, vptr + 1, n * sizeof(env->varv[0]));
+	env->varc--;
+    }
+    return 0;
+}
+
 #define SIZE_MAX ((size_t)-1)
 
 /*
@@ -661,27 +730,6 @@ micron_environ_copy(struct micron_environ *ebuf, size_t envc, char **env)
 }
 
 /*
- * Given the incremental environment EBUF and the root of environment
- * list HEAD, look up the variable NAME in it and all its parents.
- * Return the value, or NULL if not found.
- */
-static char const *
-micron_environ_get(struct micron_environ const *ebuf,
-		   struct list_head const *head,
-		   char const *name)
-{
-    struct micron_environ const *envp;
-    
-    LIST_FOREACH_FROM(envp, ebuf, head, link) {
-	char **pp;
-	if (micron_environ_find(envp, name, &pp) == 0) {
-	    return strchr(*pp, '=') + 1;
-	}
-    }
-    return NULL;
-}
-
-/*
  * Set the variable NAME to VALUE in the environment EBUF.
  */
 static int
@@ -702,6 +750,20 @@ micron_environ_set(struct micron_environ **ebuf, char const *name,
     return 0;
 }
 
+static int
+micron_environ_clone(struct micron_environ *dst,
+		     struct micron_environ *src, struct list_head *head)
+{
+    struct micron_environ *p;
+
+    LIST_FOREACH_FROM(p, src, head, link) {
+	if (micron_environ_copy(dst, p->varc, p->varv))
+	    return -1;
+	if (p->detached)
+	    break;
+    }
+    return 0;
+}
 /*
  * Build a plain environment out of incremental one.
  */
@@ -709,23 +771,13 @@ static char **
 micron_environ_build(struct micron_environ *micron_env, struct list_head *head)
 {
     struct micron_environ ebuf = MICRON_ENVIRON_INITIALIZER(ebuf);
-    struct micron_environ *p;
     extern char **environ;
 
-    LIST_FOREACH_FROM(p, micron_env, head, link) {
-	if (micron_environ_copy(&ebuf, p->varc, p->varv))
-	    goto err;
-    }
+    if (micron_environ_clone(&ebuf, micron_env, head) == 0 &&
+	micron_environ_copy(&ebuf, SIZE_MAX, environ) == 0 &&
+	micron_environ_append_var(&ebuf, NULL) == 0)
+	return ebuf.varv;
 
-    if (micron_environ_copy(&ebuf, SIZE_MAX, environ))
-	goto err;
-
-    if (micron_environ_append_var(&ebuf, NULL))
-	goto err;
-    
-    return ebuf.varv;
-
-err:
     env_free(ebuf.varv);
     return NULL;
 }
@@ -756,8 +808,11 @@ cronjob_alloc(struct cronjob_options const *opt,
     struct cronjob *job;
     char *tag = (opt && opt->syslog_facility && opt->syslog_tag)
 	         ? opt->syslog_tag : NULL;
+    char *mailto = opt ? opt->mailto : NULL;
     size_t size = sizeof(*job) + strlen(command) + 1 +
-	            (tag ? strlen(tag) + 1 : 0);
+	            (tag ? strlen(tag) + 1 : 0) +
+	            (mailto ? strlen(mailto) + 1 : 0);
+    char *p;
     
     job = calloc(1, size);
     if (job) {
@@ -771,11 +826,18 @@ cronjob_alloc(struct cronjob_options const *opt,
 	job->type = type;
 	job->fileid = fileid;
 	job->schedule = *schedule;
-	job->command = (char*)(job + 1);
+	p = (char*)(job + 1);
+	job->command = p;
 	strcpy(job->command, command);
+	p += + strlen(job->command) + 1;
 	if (tag) {
-	    job->syslog_tag = job->command + strlen(job->command) + 1;
+	    job->syslog_tag = p;
 	    strcpy(job->syslog_tag, tag);
+	    p += strlen(tag) + 1;
+	}
+	if (mailto) {
+	    job->mailto = p;
+	    strcpy(job->mailto, mailto);
 	}
 	if (pwd) {
 	    job->uid = pwd->pw_uid;
@@ -1252,95 +1314,172 @@ cronjob_options_unref(struct cronjob_options **popt)
 }
 
 static int
-parse_env_syslog_facility(char const *val, struct cronjob_options *opt,
+set_syslog_facility(char const *val, struct cronjob_options *opt,
 			  char **errmsg)
 {
     int n;
-    
-    if (*val == 0 ||
-	strcasecmp(val, "off") == 0 ||
-	strcasecmp(val, "none") == 0)
+
+    if (val) {
+	/* Set */
+	if (*val == 0 ||
+	    strcasecmp(val, "off") == 0 ||
+	    strcasecmp(val, "none") == 0)
+	    n = 0;
+	else if (strcasecmp(val, "default") == 0)
+	    n = micron_options.syslog_facility;
+	else
+	    n = micron_log_str_to_fac(val);
+	
+	if (n == -1) {
+	    *errmsg = "invalid value for builtin variable";
+	    return 1;
+	}
+    } else {
+	/* Unset */
 	n = 0;
-    else if (strcasecmp(val, "default") == 0)
-	n = micron_options.syslog_facility;
-    else
-	n = micron_log_str_to_fac(val);
-
-    if (n == -1) {
-	*errmsg = "invalid value for builtin variable";
-	return 1;
     }
-
     opt->syslog_facility = n;
     return 0;
 }
 
 static int
-parse_env_syslog_tag(char const *val, struct cronjob_options *opt,
-		     char **errmsg)
+set_syslog_tag(char const *val, struct cronjob_options *opt, char **errmsg)
 {
-    if (opt->syslog_tag)
-	free(opt->syslog_tag);
-    opt->syslog_tag = strdup(val);
-    if (!opt->syslog_tag) {
-	*errmsg = "out of memory";
-	return 1;
+    free(opt->syslog_tag);
+    if (val) {
+	/* Set */
+	free(opt->mailto);
+	opt->mailto = NULL;
+	opt->syslog_tag = strdup(val);
+	if (!opt->syslog_tag) {
+	    *errmsg = "out of memory";
+	    return 1;
+	}
+    } else {
+	/* Unset */
+	opt->syslog_tag = NULL;
     }
     return 0;
 }
 
 static int
-parse_env_maxinstances(char const *val, struct cronjob_options *opt,
-		       char **errmsg)
+set_builtin_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
+{
+    free(opt->mailto);
+    if (val) {
+	/* Set */
+	opt->syslog_facility = 0;
+	free(opt->syslog_tag);
+	opt->syslog_tag = NULL;
+	opt->mailto = strdup(val);
+	if (!opt->mailto) {
+	    *errmsg = "out of memory";
+	    return 1;
+	}
+    } else
+	opt->mailto = NULL;
+    return 0;
+}
+
+/*
+ * For backward compatibility, MAILTO takes precedence over the builtin
+ * variables.  The built-in value of mailto is unset.  If the value is
+ * not NULL, the syslog reporting is disabled as well.  Return value is
+ * always 0, so the actual value of MAILTO will be stored in the
+ * environment.
+ */
+static int
+set_env_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
+{
+    free(opt->mailto);
+    opt->mailto = NULL;
+    if (val) {
+	opt->syslog_facility = 0;
+	free(opt->syslog_tag);
+	opt->syslog_tag = NULL;
+    }
+    return 0;
+}
+
+static int
+set_maxinstances(char const *val, struct cronjob_options *opt, char **errmsg)
 {
     char *endp;
     unsigned long n;
-    errno = 0;
-    n = strtoul(val, &endp, 10);
-    if (errno || *endp) {
-	*errmsg = "not a valid number";
-	return 1;
+
+    if (val) {
+	/* Set */
+	errno = 0;
+	n = strtoul(val, &endp, 10);
+	if (errno || *endp) {
+	    *errmsg = "not a valid number";
+	    return 1;
+	}
+    } else {
+	/* Unset */
+	n = 0;
     }
     opt->maxinstances = (unsigned) n;
     return 0;
 }
 
 static int
-parse_day_semantics(char const *val, struct cronjob_options *opt,
-		    char **errmsg)
+set_day_semantics(char const *val, struct cronjob_options *opt, char **errmsg)
 {
-    int i;
+    if (val) {
+	/* Set */
+	int i;
 
-    for (i = 0; i < MAX_MICRON_DAY; i++) {
-	if (strcasecmp(val, micron_dsem_str[i]) == 0) {
-	    opt->dsem = i;
-	    return 0;
+	for (i = 0; i < MAX_MICRON_DAY; i++) {
+	    if (strcasecmp(val, micron_dsem_str[i]) == 0) {
+		opt->dsem = i;
+		return 0;
+	    }
 	}
+	*errmsg = "unknown day semantics value";
+	return 1;
+    } else {
+	/* Unset */
+	opt->dsem = MICRON_DAY_STRICT;
     }
-    *errmsg = "unknown day semantics value";
+    return 0;
+}
+
+static int
+set_rovar(char const *val, struct cronjob_options *opt, char **errmsg)
+{
+    *errmsg = "assignment to a read-only variable";
     return 1;
 }
 
 static int
-parse_rovar(char const *val, struct cronjob_options *opt, char **errmsg)
+no_unset(char const *val, struct cronjob_options *opt, char **errmsg)
 {
-    *errmsg = "assignment to a read-only variable";
-    return 1;
+    if (!val) {
+	*errmsg = "can't unset this variable";
+	return 1;
+    }
+    return 0;
 }
 
 static struct vardef {
     char *name;
     int len;
     int builtin;
-    int (*parser)(char const *, struct cronjob_options *, char **);
+    int (*setval)(char const *, struct cronjob_options *, char **);
 } vardef[] = {
 #define S(s) s, sizeof(s)-1
-    { S(BUILTIN_SYSLOG_FACILITY), 1, parse_env_syslog_facility },
-    { S(BUILTIN_SYSLOG_TAG),      1, parse_env_syslog_tag },
-    { S(BUILTIN_MAXINSTANCES),    1, parse_env_maxinstances },
-    { S(BUILTIN_DAY_SEMANTICS),   1, parse_day_semantics },
-    { S(ENV_LOGNAME),         0, parse_rovar },
-    { S(ENV_USER),            0, parse_rovar },
+    { S(BUILTIN_SYSLOG_FACILITY), 1, set_syslog_facility },
+    { S(BUILTIN_SYSLOG_TAG),      1, set_syslog_tag },
+    { S(BUILTIN_MAXINSTANCES),    1, set_maxinstances },
+    { S(BUILTIN_DAY_SEMANTICS),   1, set_day_semantics },
+    { S(BUILTIN_MAILTO),          1, set_builtin_mailto },
+    { S(ENV_LOGNAME),             0, set_rovar },
+    { S(ENV_USER),                0, set_rovar },
+    { S(ENV_MAILTO),              0, set_env_mailto },
+    { S(ENV_PATH),                0, no_unset },
+    { S(ENV_SHELL),               0, no_unset },
+    { S(ENV_HOME),                0, no_unset },
     { NULL }
 };
 
@@ -1351,7 +1490,8 @@ enum {
 };
 
 static int
-parse_env(char *def, struct cronjob_options **opt, char **errmsg)
+parse_env(char *def, size_t len, char *value,
+	  struct cronjob_options **opt, char **errmsg)
 {
     struct vardef *vd;
     int builtin = 0;
@@ -1366,22 +1506,25 @@ parse_env(char *def, struct cronjob_options **opt, char **errmsg)
 	builtin = 1;
 	perjob = 0;
 	def += micron_prefix_len;
+	len -= micron_prefix_len;
     } else if (strncmp(def, job_prefix, job_prefix_len) == 0) {
 	builtin = 1;
 	perjob = 1;
 	def += job_prefix_len;
+	len -= job_prefix_len;
     }
 		
     for (vd = vardef; vd->name; vd++) {
 	if (vd->builtin == builtin &&
-	    strncmp(def, vd->name, vd->len) == 0 && def[vd->len] == '=') {
+	    vd->len == len &&
+	    strncmp(def, vd->name, vd->len) == 0) {
 	    if (builtin) {
 		if (perjob && cronjob_options_ref(opt)) {
 		    *errmsg = "out of memory";
 		    return PARSE_ENV_FAILURE;
 		}
 	    }
-	    if (vd->parser(def + vd->len + 1, *opt, errmsg))
+	    if (vd->setval(value, *opt, errmsg))
 		return PARSE_ENV_FAILURE;
 	    if (builtin)
 		return PARSE_ENV_BUILTIN;
@@ -1424,7 +1567,7 @@ set_crontab_options(char *str)
 	    exit(EXIT_USAGE);
 	}
 
-	if (vd->parser(start, &micron_options, &errmsg)) {
+	if (vd->setval(start, &micron_options, &errmsg)) {
 	    micron_log(LOG_ERR, "%s: %s", p, errmsg);
 	    exit(EXIT_USAGE);
 	}
@@ -1584,6 +1727,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	    ;
 
 	if (is_env(p, &name_len, &val_start)) {
+	    char *value;
 	    char *var = malloc(len+1);
 	    if (!var) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
@@ -1594,10 +1738,15 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	    var[name_len] = '=';
 
 	    p += val_start;
-	    if (*p == '"' || *p == '\'')
-		rc = copy_quoted(var + name_len + 1, p + 1, *p);
-	    else
-		rc = copy_unquoted(var + name_len + 1, p);
+	    if (*p) {
+		value = var + name_len + 1;
+		if (*p == '"' || *p == '\'')
+		    rc = copy_quoted(value, p + 1, *p);
+		else 
+		    rc = copy_unquoted(value, p);
+	    } else
+		value = NULL;
+		
 	    if (rc) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: syntax error",
 			   ARGCRONTAB(cgrp, filename), line);
@@ -1605,17 +1754,27 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 		goto next;
 	    }
 
-	    rc = parse_env(var, &opt, &errmsg);
+	    rc = parse_env(var, name_len, value, &opt, &errmsg);
 	    if (rc == PARSE_ENV_OK) {
-		env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
-		if (!env_cont) {
-		    env = micron_environ_alloc(&cp->env_head);
-		}
-		if (micron_environ_set_var(&env, var)) {
-		    micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
-			       ARGCRONTAB(cgrp, filename), line);
+		if (value) {
+		    env = LIST_FIRST_ENTRY(&cp->env_head, env, link);
+		    if (!env_cont) {
+			env = micron_environ_alloc(&cp->env_head);
+		    }
+		    if (micron_environ_set_var(&env, var)) {
+			micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
+				   ARGCRONTAB(cgrp, filename), line);
+			free(var);
+			break;
+		    }
+		} else {
+		    rc = micron_environ_unset(&cp->env_head, var);
 		    free(var);
-		    break;
+		    if (rc) {
+			micron_log(LOG_ERR, PRsCRONTAB ":%u: out of memory",
+				   ARGCRONTAB(cgrp, filename), line);
+			break;
+		    }
 		}
 	    } else if (rc == PARSE_ENV_FAILURE) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: %s",

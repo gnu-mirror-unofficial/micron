@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 5 "May 18, 2020" "CRONTAB" "File Formats Manual"
+.TH CRONTAB 5 "May 21, 2020" "CRONTAB" "File Formats Manual"
 .SH NAME
 crontab \- tables for driving micrond
 .SH DESCRIPTION
@@ -184,19 +184,25 @@ where \fIname\fR is the variable name and \fIvalue\fR is the value to
 be assigned to it.  Notice several important differences from the
 similar construct in shell.  First of all, optional whitespace is
 allowed on either side of the equals sign.  Secondly, the value is
-assigned verbatim, after removing the trailing and leading whitespace.
-You don't need to quote it even if it contains embedded whitespace.
-The only case when quoting becomes necessary is if you wish to
-preserve leading or trailing whitespace.  In this case both single and
-double quotes can be used, the only requirement being that both quotes
-match.  Inside a quoted string, a backslash character can be used to
-escape a quote character or another backslash.  To define an empty
-variable, use a pair of quotes or an empty string.  
-.PP
-Finally, notice that the value is always taken verbatim.  No
-expansions or substitutions take place.  If you need this kind of
+assigned verbatim, after removing any trailing and leading whitespace.
+No expansions or substitutions take place.  If you need this kind of
 functionality, move environment manipulations to a shell script and
-invoke the script from the cron command.
+invoke it from the cron command.
+.PP
+You don't need to quote \fIvalue\fR even if it contains embedded
+whitespace.  There are two cases when quoting becomes necessary: to
+define an empty variable or to preserve leading or trailing
+whitespace.  In the latter case both single and double quotes can be
+used, the only requirement being that both quotes match.  Inside a
+quoted string, a backslash character can be used to escape a quote
+character or another backslash.  To define an empty variable, use a
+pair of quotes.
+.PP
+Finally, the construct
+.PP
+   \fIname\fR =
+.PP
+unsets the variable \fIname\fR.
 .PP
 A variable setting applies to all cron commands that follow it, until
 another setting overwrites it or the end of file is encountered.
@@ -248,11 +254,25 @@ constructed as \fIFILE\fB:\fILINE\fB(\fIPROG\fB)\fR, where
 \fIFILE\fR and \fILINE\fR are the file name and line number of the
 line where the cron command appeared and \fIPROG\fR is the first word
 of the command.
+.sp
+The global counterpart of this variable, \fB_MICRON_SYSLOG_TAG\fR,
+is provided for completeness.  It is probably of little use, since it
+sets the same tag for all crontab entries.
 .TP
 .BR _MICRON_MAXINSTANCES ", " _JOB_MAXINSTANCES
 An integer value defining how many instances of the same cron job can
 be running simultaneously.  Default is 1, i.e. \fBmicrond\fR will
 refuse to start a job if its previous run has not yet terminated.
+.TP
+.B _JOB_MAILTO
+This variable temporarily masks the \fBMAILTO\fR variable and disables
+the two \fBSYSLOG\fR variables for the next crontab entry.  After
+that, the previous values are restored.  Use it to redirect output of
+a single crontab entry to a particular address.
+.sp
+The global version of this variable, \fB_MICRON_MAILTO\fR, is mostly
+equivalent to the traditional \fBMAILTO\fR variable, except that any
+existing value of \fBMAILTO\fR is retained in the environment.
 .TP
 .BR _MICRON_DAY_SEMANTICS ", " _JOB_DAY_SEMANTICS
 Defines the day semantics.  Allowed values are:

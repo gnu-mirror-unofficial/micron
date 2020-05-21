@@ -390,6 +390,17 @@ cron_thr_runner(void *ptr)
     return NULL;
 }
 
+static inline const char *
+get_mailto(struct proctab *pt)
+{
+    char const *addr;
+
+    if ((addr = pt->job->mailto) == NULL &&
+	(addr = env_get(ENV_MAILTO, pt->env)) == NULL)
+	addr = env_get(ENV_LOGNAME, pt->env);
+    return addr;
+}
+
 void *
 cron_thr_cleaner(void *ptr)
 {
@@ -430,9 +441,7 @@ cron_thr_cleaner(void *ptr)
 
 	    /* See whether results should be mailed to anybody */
 	    if (!pt->syslog) {
-		char const *p = env_get(ENV_MAILTO, pt->env);
-		if (!p)
-		    p = env_get(ENV_LOGNAME, pt->env);
+		char const *p = get_mailto(pt);
 		if (*p != 0) {
 		    /* See if we have any output at all */
 		    off_t off = lseek(pt->fd, 0, SEEK_END);

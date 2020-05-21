@@ -34,6 +34,7 @@ struct cronjob_options {
     unsigned maxinstances;
     int syslog_facility;
     char *syslog_tag;
+    char *mailto;
     struct cronjob_options *prev;
 };
 
@@ -53,6 +54,7 @@ struct cronjob {
     int fileid;                /* Crontab identifier */
     int syslog_facility;
     char *syslog_tag; 
+    char *mailto;
     unsigned refcnt;           /* Number of times this entry is referenced */
     unsigned runcnt;           /* Number of instances running */
 };
@@ -188,6 +190,7 @@ enum {
 #define BUILTIN_SYSLOG_TAG "SYSLOG_TAG"
 #define BUILTIN_MAXINSTANCES "MAXINSTANCES"
 #define BUILTIN_DAY_SEMANTICS "DAY_SEMANTICS"
+#define BUILTIN_MAILTO "MAILTO"
 
 /* Important environment variables */
 #define ENV_LOGNAME "LOGNAME"
@@ -195,6 +198,7 @@ enum {
 #define ENV_HOME "HOME"
 #define ENV_SHELL "SHELL"
 #define ENV_MAILTO "MAILTO"
+#define ENV_PATH "PATH"
 
 void crongroups_parse_all(int ifmod);
 
