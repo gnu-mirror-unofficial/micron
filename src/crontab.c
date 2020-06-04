@@ -478,8 +478,9 @@ command_edit(int argc, char **argv)
     char *editor;
     char *editor_command;
     size_t len;
-    char template[] = ".#micronXXXXXX";
-    int fd;
+    char *tempdir;
+    char template[] = "micronXXXXXX";
+    int tempfd, fd;
     FILE *fp;
     struct stat st;
     int tempdirfd;
@@ -494,10 +495,21 @@ command_edit(int argc, char **argv)
 	((editor = getenv("EDITOR")) == NULL || !*editor))
 	editor = MICRON_EDITOR;
 
-    tempdirfd = create_temp_file(crondirfd, template, 0, 1);
+    tempdir = getenv("TMP");
+    if (!tempdir)
+	tempdir = "/tmp";
+
+    tempfd = open(tempdir, O_RDONLY | O_NONBLOCK | O_DIRECTORY);
+    if (tempfd == -1) {
+	terror("can't open directory %s: %s", tempdir, strerror(errno));
+	return EXIT_FATAL;
+    }
+	
+    tempdirfd = create_temp_file(tempfd, template, 0, 1);
     if (tempdirfd == -1) {
 	terror("can't create temporary directory in %s: %s",
 	       crondirname, strerror(errno));
+	close(tempfd);
 	return EXIT_FATAL;
     }
     
@@ -516,8 +528,8 @@ command_edit(int argc, char **argv)
     }
     fp = fdopen(fd, "w");
     if (!fp) {
-	terror("can't fdopen file %s/%s: %s", template, crontabfile,
-	       strerror(errno));
+	terror("can't fdopen file %s/%s/%s: %s", template, crontabfile,
+	       tempdir, strerror(errno));
 	close(fd);
 	goto finish;
     }
@@ -563,7 +575,7 @@ command_edit(int argc, char **argv)
 	    int i;
 	    
 	    if (fchdir(tempdirfd)) {
-		terror("failed to change to %s: %s", template,
+		terror("failed to change to %s/%s: %s", tempdir, template,
 		       strerror(errno));
 		_exit(127);
 	    }
@@ -588,7 +600,20 @@ command_edit(int argc, char **argv)
     
     if (renameat(tempdirfd, crontabfile, crondirfd, crontabfile) == 0)
 	rc = EXIT_OK;
-    else {
+    else if (errno == EXDEV) {
+	FILE *src;
+	fd = openat(tempdirfd, crontabfile, O_RDONLY);
+	if (fd == -1 || (src = fdopen(fd, "r")) == NULL) {
+	    terror("can't open file %s/%s/%s: %s", tempdir, template,
+		   crontabfile, strerror(errno));
+	    close(fd);
+	} else {
+	    fp = crontab_open(crontabfile, "w");
+	    rc = fcopy(src, fp);
+	    fclose(src);
+	    fclose(fp);
+	}
+    } else {
 	terror("failed to rename %s/%s to %s/%s: %s",
 	       template, crontabfile, crondirname, crontabfile,
 	       strerror(errno));
@@ -597,8 +622,9 @@ command_edit(int argc, char **argv)
 finish:
     cleanupdir(tempdirfd, template);
     close(tempdirfd);
-    if (unlinkat(crondirfd, template, AT_REMOVEDIR))
+    if (unlinkat(tempfd, template, AT_REMOVEDIR))
 	terror("failed to remove %s: %s", template, strerror(errno));
+    close(tempfd);
     return rc;
 }
 

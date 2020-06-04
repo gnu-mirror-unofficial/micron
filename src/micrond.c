@@ -564,6 +564,7 @@ micron_environ_init(struct micron_environ *ebuf)
 {
     ebuf->varc = ebuf->varmax = 0;
     ebuf->varv = NULL;
+    ebuf->detached = 0;
     list_head_init(&ebuf->link);
 }
 

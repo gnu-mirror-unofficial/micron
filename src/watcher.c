@@ -100,17 +100,18 @@ event_handler(struct inotify_event *ep)
     if (ep->mask & IN_IGNORED)
 	/* nothing */ ;
     else if (ep->mask & IN_Q_OVERFLOW)
-	micron_log(LOG_NOTICE, "event queue overflow");
+	micron_log(LOG_NOTICE, "watcher event queue overflow");
     else if (ep->mask & IN_UNMOUNT)
 	/* FIXME? */ ;
     else if (!cgrp) {
 	if (ep->name)
-	    micron_log(LOG_NOTICE, "unrecognized event %x for %s",
+	    micron_log(LOG_NOTICE, "watcher: unrecognized event %x for %s",
 		       ep->mask, ep->name);
 	else
-	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
+	    micron_log(LOG_NOTICE, "watcher: unrecognized event %x", ep->mask);
     } else if (ep->mask & IN_CREATE) {
-	micron_log(LOG_DEBUG, "%s/%s created", cgrp->dirname, ep->name);
+	micron_log(LOG_DEBUG, "watcher: %s/%s created", cgrp->dirname,
+		   ep->name);
 	if (cgrp->type == CGTYPE_GROUPHOST) {
 	    rescan = 1;
 	    usercrongroup_add(cgrp, ep->name);
@@ -122,7 +123,7 @@ event_handler(struct inotify_event *ep)
 	else
 	    crontab_chattr(cgrp, ep->name);
     } else if (ep->mask & (IN_DELETE | IN_MOVED_FROM)) {
-	micron_log(LOG_DEBUG, "%s/%s %s", cgrp->dirname, ep->name,
+	micron_log(LOG_DEBUG, "watcher: %s/%s %s", cgrp->dirname, ep->name,
 		   ep->mask & IN_DELETE ? "deleted" : "moved out");
 	if (cgrp->type == CGTYPE_GROUPHOST) {
 	    watcher_remove(cgrp->wd);
@@ -130,7 +131,7 @@ event_handler(struct inotify_event *ep)
 	} else
 	    crontab_deleted(cgrp, ep->name);
     } else if (ep->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
-	micron_log(LOG_DEBUG, "%s/%s %s", 
+	micron_log(LOG_DEBUG, "watcher: %s/%s %s", 
 		   cgrp->dirname, ep->name,
 		   ep->mask & IN_MOVED_TO ? "moved to" : "written");
 	rescan = 1;
@@ -140,10 +141,10 @@ event_handler(struct inotify_event *ep)
 	    crontab_updated(cgrp, ep->name);
     } else {
 	if (ep->name)
-	    micron_log(LOG_NOTICE, "unrecognized event %x for %s",
+	    micron_log(LOG_NOTICE, "watcher: unrecognized event %x for %s",
 		       ep->mask, ep->name);
 	else
-	    micron_log(LOG_NOTICE, "unrecognized event %x", ep->mask);
+	    micron_log(LOG_NOTICE, "watcher: unrecognized event %x", ep->mask);
     }
     if (rescan) {
 	LIST_FOREACH(cgrp, &crongroup_head, list)
