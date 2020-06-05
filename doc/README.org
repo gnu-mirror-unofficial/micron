@@ -11,16 +11,16 @@ and the *crontab* utility.
 * Crontabs
 
 The instructions specifying what commands to run and when are kept in
-a set *crontab* files.  *Micrond* reads crontabs at startup and loads
-them to memory.  At runtime it keeps track of crontab modifications
-and updates its in-memory tables as soon as a modification is
-detected.
+a set of _crontab_ files.  *Micrond* reads its crontabs at startup and
+loads them to memory.  When running, it keeps track of crontab
+modifications and updates its in-memory tables as soon as a
+modification is detected.
 
-The crontabs are stored in several locations, collectively know as
-crontab groups:
+The crontabs are stored in several locations, collectively known as
+_crontab groups_:
 
 - master crontab ::
-  The master crontab is read from the file */etc/crontab*.
+  Master crontab is read from the file */etc/crontab*.
 
 - system crontabs ::
   A collection of crontab files in the */etc/cron.d* directory.
@@ -35,9 +35,12 @@ crontab groups:
   corresponding account.  This crontab group will be described in
   detail later.
 
+Each _active_ (i.e. non-empty and non-comment) line in a crontab specifies
+a schedule and a command line to be run according to that schedule.
+Active lines in master and system crontabs specify also the login name of
+the user on behalf of whom the command must be run. 
+
 Both master and system crontabs are writable only by the super-user.
-For each command to be run they specify, along with the schedule, the
-name of the user on behalf of which it must be run.
 
 User and user group crontabs belong to particular users and
 instructions they contain are executed on behalf of their owners.  To
@@ -52,24 +55,24 @@ implementations.
 ** User group crontabs
 
 User group crontabs are an experimental feature designed to facilitate
-maintenance of per-service crontabs by many users.  Consider, for
-example, a web server that runs multiple web sites maintained by
-various users who need to run periodic backend jobs on behalf of the
-account the httpd server runs as.  User group crontabs make it possible
-without intervention of the system administrator.  Let's assume httpd
-runs as the user *apache*.  The system administrator creates a
-directory */var/spool/cron/crongroups/apache*, and sets *apache* as
-its owner:
+maintenance of per-service crontabs.  Consider, for example, a web
+server that runs multiple web sites maintained by various users who
+need to run periodic backend jobs on behalf of the account the httpd
+server runs as.  User group crontabs make it possible without
+intervention of the system administrator.  Let's assume httpd runs as
+the user *apache*.  The system administrator creates a directory
+*/var/spool/cron/crongroups/apache*, and sets *apache* as its owner:
 
 #+BEGIN_SRC shell-script
   mkdir /var/spool/cron/crongroups/apache
   chown apache: /var/spool/cron/crongroups/apache
 #+END_SRC
 
-Then, he adds the users who should be able to edit apache cronjobs to
-the primary group of the *apache* user.  Once done, these users become
-able to create and edit crontabs in this directory using the *crontab*
-command with the *-g* option (for *group*).  For example, the command
+Then, he adds login names of the users who should be able to edit apache
+cronjobs to the primary group of the *apache* user.  Once done, these
+users become able to create and edit crontabs in this directory using
+the *crontab* command with the *-g* option (short for *group*).  For
+example, the command 
 
 #+BEGIN_SRC shell-script
   crontab -u apache -g -e myproject
@@ -179,7 +182,7 @@ first word of the command, e.g.:
 
 ** Simultaneous job execution
 
-Number of simultaneously running instances of a cron job is
+The number of simultaneously running instances of a cron job is
 limited.  It is controlled by the value of the =_MICRON_MAXINSTANCES=
 variable.  The default value is 1, which means that the job won't be
 started until its previous instance terminates.  This differs both
@@ -220,7 +223,7 @@ If you chose another group name, supply it to =configure= using the
 The above commands will install the package under */usr/local*.  That
 is, the server will be installed as */usr/local/sbin/micron*, the
 *crontab* utility  as */usr/local/bin/crontab*, etc.  If that's not
-what you want, use the *--prefix* option to specify the installation
+what you want, use the =--prefix= option to specify the installation
 prefix, e.g.
 
 #+BEGIN_SRC shell-script
