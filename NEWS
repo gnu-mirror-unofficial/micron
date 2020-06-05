@@ -1,9 +1,9 @@
-micron -- history of user-visible changes. 2020-05-21
+micron -- history of user-visible changes. 2020-06-05
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
 
-Version 0.5.90 (git)
+Version 0.6, 2020-06-05
 
 * Unsetting environment variable in crontab
 
