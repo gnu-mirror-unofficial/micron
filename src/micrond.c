@@ -2198,6 +2198,16 @@ static int (*crongroup_check[])(struct crongroup *, struct stat *) = {
 };
 
 int
+crongroup_skip_name(struct crongroup *cgrp, char const *name)
+{
+    return (strcmp(name, ".") == 0 ||
+	    strcmp(name, "..") == 0 ||
+	    (cgrp->pattern && 
+	     fnmatch(cgrp->pattern, name, FNM_PATHNAME|FNM_PERIOD)) ||
+	    patmatch(cgrp->exclude, name));
+}
+
+int
 crongroup_parse(struct crongroup *cgrp, int ifmod)
 {
     int dirfd;
@@ -2278,12 +2288,7 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
 
 	rc = CRONTAB_SUCCESS;
 	while ((ent = readdir(dir))) {
-	    if (strcmp(ent->d_name, ".") == 0 ||
-		strcmp(ent->d_name, "..") == 0 ||
-		(cgrp->pattern && 
-                 fnmatch(cgrp->pattern, ent->d_name, 
-                         FNM_PATHNAME|FNM_PERIOD)) ||
-		patmatch(cgrp->exclude, ent->d_name))
+	    if (crongroup_skip_name(cgrp, ent->d_name))
 		continue;
 
 	    if (cgrp->type == CGTYPE_GROUPHOST) {

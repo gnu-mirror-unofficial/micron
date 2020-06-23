@@ -206,6 +206,7 @@ void crontab_deleted(struct crongroup *cgrp, char const *name);
 void crontab_updated(struct crongroup *cgrp, char const *name);
 void crontab_chattr(struct crongroup *cgrp, char const *name);
 void crongroup_chattr(struct crongroup *cgrp);
+int crongroup_skip_name(struct crongroup *cgrp, char const *name);
 
 void *cron_thr_watcher(void *ptr);
 

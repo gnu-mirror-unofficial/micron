@@ -109,6 +109,8 @@ event_handler(struct inotify_event *ep)
 		       ep->mask, ep->name);
 	else
 	    micron_log(LOG_NOTICE, "watcher: unrecognized event %x", ep->mask);
+    } else if (crongroup_skip_name(cgrp, ep->name)) {
+	return;
     } else if (ep->mask & IN_CREATE) {
 	micron_log(LOG_DEBUG, "watcher: %s/%s created", cgrp->dirname,
 		   ep->name);
