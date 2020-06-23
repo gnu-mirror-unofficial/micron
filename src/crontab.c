@@ -29,7 +29,6 @@
 #include <dirent.h>
 #include "defs.h"
 #include "list.h"
-#include <fnmatch.h> // FIXME
 
 static char *crondirname;
 static int crondirfd;
@@ -37,7 +36,6 @@ static char const *crontabfile = NULL;
 static int group_opt = 0;
 static int interactive_opt = 0;
 static char const *username = NULL;
-static gid_t crongroup_id;
 
 static char *catfilename(char const *dir, char const *file);
 
@@ -109,7 +107,11 @@ getyn(int dfl, const char *prompt, ...)
     } while ((c = getchar()) != EOF);
     exit(EXIT_USAGE);
 }
+
+static uid_t crontab_uid = -1;
+static gid_t crontab_gid = -1;
 
+
 enum crontab_command { C_INSTALL, C_EDIT, C_LIST, C_REMOVE };
 
 static int command_install(int, char **);
@@ -173,7 +175,6 @@ main(int argc, char **argv)
 {
     int c;
     enum crontab_command command = C_INSTALL;
-    struct passwd *pwd;
     
     set_progname(argv[0]);
     
@@ -220,18 +221,28 @@ main(int argc, char **argv)
     argv += optind;
     
     if (username) {
-	if (getuid() && !group_opt) {
+	if (group_opt) {
+	    crontab_uid = -1;
+	} else if (getuid()) {
 	    terror("only root can do that");
 	    exit(EXIT_USAGE);
-	}
-
-	pwd = getpwnam(username);
-	if (!pwd) {
-	    terror("no such user: %s", username);
-	    exit(EXIT_FATAL);
+	} else {
+	    struct passwd *pwd = getpwnam(username);
+	    if (!pwd) {
+		terror("no such user: %s", username);
+		exit(EXIT_FATAL);
+	    }
+	    if (getuid() == 0) {
+		crontab_uid = pwd->pw_uid;
+		crontab_gid = -1;
+	    }
 	}
     } else {
 	username = logname();
+	if (getuid() == 0) {
+	    crontab_uid = getuid();
+	    crontab_gid = getgid();
+	}
     }
 
     if (group_opt) {
@@ -258,15 +269,15 @@ main(int argc, char **argv)
 	    exit(EXIT_FATAL);
 	}
 
-	crongroup_id = st.st_gid;
+	crontab_gid = st.st_gid;
 	
-	grp = getgrgid(crongroup_id);
+	grp = getgrgid(crontab_gid);
 	if (!grp) {
-	    terror("no group for gid %lu", (unsigned long)crongroup_id);
+	    terror("no group for gid %lu", (unsigned long)crontab_gid);
 	    exit(EXIT_FATAL);
 	}
 
-	if (getgid() != crongroup_id && getuid() != 0) {
+	if (getgid() != crontab_gid && getuid() != 0) {
 	    int i;
 	    char const *name = logname();
 	    for (i = 0; grp->gr_mem[i]; i++)
@@ -368,6 +379,14 @@ crontab_open(char const *filename, char const *smode)
 	       strerror(errno));
 	exit(EXIT_FATAL);
     }
+    if ((mode & O_CREAT) && (crontab_uid != -1 || crontab_gid != -1)) {
+	/* Fix file ownership */
+	if (fchown(fd, crontab_uid, crontab_gid)) {
+	    terror("can't change ownership of %s/%s: %s",
+		   crondirname, filename, strerror(errno));
+	    exit(EXIT_FATAL);
+	}
+    }
     fp = fdopen(fd, smode);
     if (!fp) {
 	terror("can't fdopen file %s/%s: %s", crondirname, filename,
@@ -406,9 +425,9 @@ command_install(int argc, char **argv)
     }
 
     dst = crontab_open(crontabfile, "w");
-    if (group_opt) {
-	if (fchown(fileno(dst), -1, crongroup_id)) {
-	    terror("can't change owner group: %s", strerror(errno));
+    if (crontab_uid != -1 || crontab_gid != -1) {
+	if (fchown(fileno(dst), crontab_uid, crontab_gid)) {
+	    terror("can't change ownership: %s", strerror(errno));
 	    fclose(dst);
 	    //FIXME: bail out; better even use tempfile
 	}
@@ -512,6 +531,14 @@ command_edit(int argc, char **argv)
 	close(tempfd);
 	return EXIT_FATAL;
     }
+
+    if (crontab_uid != -1 || crontab_gid != -1) {
+	if (fchown(tempdirfd, crontab_uid, crontab_gid)) {
+	    terror("can't change ownership: %s", strerror(errno));
+	    close(tempdirfd);
+	    goto finish;
+	}
+    }
     
     fd = openat(tempdirfd, crontabfile, O_CREAT|O_TRUNC|O_RDWR, 0660);
     if (fd == -1) {
@@ -519,13 +546,15 @@ command_edit(int argc, char **argv)
 	       template, crontabfile, strerror(errno));
 	goto finish;
     }
-    if (group_opt) {
-	if (fchown(fd, -1, crongroup_id)) {
-	    terror("can't change owner group: %s", strerror(errno));
+
+    if (crontab_uid != -1 || crontab_gid != -1) {
+	if (fchown(fd, crontab_uid, crontab_gid)) {
+	    terror("can't change ownership: %s", strerror(errno));
 	    close(fd);
 	    goto finish;
 	}
     }
+
     fp = fdopen(fd, "w");
     if (!fp) {
 	terror("can't fdopen file %s/%s/%s: %s", template, crontabfile,
@@ -573,7 +602,7 @@ command_edit(int argc, char **argv)
 	}
 	if (pid == 0) {
 	    int i;
-	    
+
 	    if (fchdir(tempdirfd)) {
 		terror("failed to change to %s/%s: %s", tempdir, template,
 		       strerror(errno));
@@ -780,7 +809,7 @@ usergrouplist(void)
 	}
 	if (!S_ISREG(st.st_mode) ||
 	    is_ignored_file_name(ent->d_name) ||
-	    st.st_gid != crongroup_id)
+	    st.st_gid != crontab_gid)
 	    continue;
 
 	pwd = getpwuid(st.st_uid);
