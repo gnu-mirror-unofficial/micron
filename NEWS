@@ -1,7 +1,18 @@
-micron -- history of user-visible changes. 2020-06-05
+micron -- history of user-visible changes. 2020-06-24
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
+
+Version 0.7, 2020-06-24
+
+* crontab: set proper ownership on created crontabs
+
+* micrond
+
+** ignore inotify events on backup and temporary files
+
+** allow for user group crontabs owned by root
+
 
 Version 0.6, 2020-06-05
 
