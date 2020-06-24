@@ -1117,7 +1117,7 @@ crontab_stat(struct crongroup *cgrp, char const *filename, struct stat *pst,
 		       (unsigned long)st.st_uid);
 	    return CRONTAB_FAILURE;
 	}
-	if (pwd->pw_gid != cgrp->owner_gid) {
+	if (pwd->pw_uid != 0 && pwd->pw_gid != cgrp->owner_gid) {
 	    struct group *grp;
 	    int i;
 	    char *user;
