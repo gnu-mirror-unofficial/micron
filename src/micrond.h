@@ -175,6 +175,7 @@ struct crongroup {
 extern struct list_head crongroup_head;
 extern char *mailer_command;
 extern int log_level;
+extern mode_t saved_umask;
 
 /* Return values from crontab safety checking and parsing functions */
 enum {

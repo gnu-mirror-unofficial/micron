@@ -255,7 +255,7 @@ runner_start(struct cronjob *job)
 	char const *shell;
 
 	/* Set the proper umask */
-	umask(022);
+	umask(saved_umask);
 	
 	/* Redirect stdout and stderr to file */
 	dup2(fd, 1);

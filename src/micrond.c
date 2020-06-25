@@ -124,6 +124,7 @@ int foreground;
 int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
 int log_level = LOG_INFO;
+mode_t saved_umask;
 
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
@@ -348,8 +349,7 @@ main(int argc, char **argv)
     } else if (micron_options.syslog_facility)
 	micron_log_open(progname, LOG_CRON);
 
-    umask(077);
-
+    saved_umask = umask(077);
     crongroups_parse_all(PARSE_ALWAYS);
 
     sigemptyset(&sigs);
