@@ -25,6 +25,7 @@
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/select.h>
 #include <pthread.h>
 #include <fcntl.h>
@@ -253,6 +254,9 @@ runner_start(struct cronjob *job)
 	int i;
 	char const *shell;
 
+	/* Set the proper umask */
+	umask(022);
+	
 	/* Redirect stdout and stderr to file */
 	dup2(fd, 1);
 	dup2(1, 2);
