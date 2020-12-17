@@ -1,7 +1,12 @@
-micron -- history of user-visible changes. 2020-06-24
+micron -- history of user-visible changes. 2020-06-25
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
+
+Version 0.8, 2020-06-25
+
+* Cronjobs inherit umask value from the parent of micrond
+
 
 Version 0.7, 2020-06-24
 
