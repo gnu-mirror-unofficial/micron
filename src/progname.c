@@ -18,7 +18,7 @@ void
 version(void)
 {
     printf("%s (%s) %s\n", progname, PACKAGE_NAME, PACKAGE_VERSION);
-    printf("Copyright (C) 2020 Sergey Poznyakoff\n");
+    printf("Copyright (C) 2021 Sergey Poznyakoff\n");
     printf("\
 \n\
 License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\

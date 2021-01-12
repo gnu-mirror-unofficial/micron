@@ -15,7 +15,7 @@
 # with micron. If not, see <http://www.gnu.org/licenses/>. */
 
 AC_PREREQ(2.63)
-AC_INIT([micron],[0.8],[gray@gnu.org.ua])
+AC_INIT([micron],[0.9],[gray@gnu.org.ua])
 AC_CONFIG_SRCDIR([src/micron.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_HEADER([config.h])
