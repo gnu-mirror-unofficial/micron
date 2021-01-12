@@ -135,6 +135,16 @@ proctab_lookup_safe(pid_t pid)
     pthread_mutex_unlock(&proctab_mutex);
     return pt;
 }
+
+static inline struct proctab *
+proctab_lookup_job_safe(struct cronjob *job)
+{
+    struct proctab *pt;
+    pthread_mutex_lock(&proctab_mutex);
+    pt = proctab_lookup_job(job);
+    pthread_mutex_unlock(&proctab_mutex);
+    return pt;
+}
 
 extern char **environ;
 
@@ -183,7 +193,7 @@ runner_start(struct cronjob *job)
     }
 
     /* Check the eventual multiple use */
-    pt = proctab_lookup_job(job);
+    pt = proctab_lookup_job_safe(job);
     if (pt) {
 	if (job->maxinstances <= 1) {
 	    micron_log(LOG_ERR,
