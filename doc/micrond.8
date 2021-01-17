@@ -13,12 +13,12 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH MICROND 8 "May 18, 2020" "MICROND" "System Manager's Manual"
+.TH MICROND 8 "January 17, 2021" "MICROND" "System Manager's Manual"
 .SH NAME
 micrond \- a minimal cron implementation
 .SH SYNOPSIS
 \fBmicrond\fR\
- [\fB\-fhsv\fR]\
+ [\fB\-fhNSsv\fR]\
  [\fB\-g \fR[\fBno\fR]\fIGROUP\fR[\fB=\fIDIR\fR]]\
  [\fB\-l \fIPRI\fR]\
  [\fB\-m \fIMAILER\fR]\
@@ -59,7 +59,7 @@ command line option.
 Instead of mailing job outputs, \fBmicrond\fR can be configured to
 send them to a particular syslog facility.  If so configured, the
 output is logged synchronously with the job execution.  The syslog
-configuration can be global, using the \fB\-s\fR and \fB\-F\fR command
+configuration can be global, using the \fB\-s\fR and \fB\-o\fR command
 line options, per-crontab or even per-job, using the
 \fB_MICRON_SYSLOG_FACILITY\fR variable setting.
 .PP
@@ -201,9 +201,16 @@ Send messages to syslog via this socket.  \fISOCKET\fR is either an
 absolute file name of a UNIX socket, or a host name or IPv4 address
 optionally followed by a colon and port number or service name.
 .TP
+.B \-S
+When running in foreground (see the \fB\-f\fR option), log messages
+from \fBmicrond\fR to the syslog facility "cron", instead of printing
+them to the standard error.  Not to be confused with the \fB\-S\fR
+option, described below.
+.TP
 .B \-s
 Log output from cronjobs to syslog.  By default, the \fBcron\fR
-facility is used.  Use \fB\-F\fR to change it.
+facility is used.  Use the \fB\-o syslog_facility=\fIF\fR option to
+change it to facility \fIF\fR.
 .TP
 .B \-v
 Print program version, licensing information and exit.

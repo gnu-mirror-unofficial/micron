@@ -231,19 +231,21 @@ crongroup_option(char const *arg)
 static void
 usage(void)
 {
-    printf("usage: %s [-Nfs] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-o OPTS] [-p DEV]\n", progname);
+    printf("usage: %s [-fhNSsv] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-o OPTS] [-p DEV]\n", progname);
     printf("A cron deamon\n");
     printf("\nOPTIONS:\n\n");
-    printf("    -N              disable safety checking (for debugging only!)\n");
-    printf("    -f              remain in foreground\n");
-    printf("    -s              log output from cronjobs to syslog\n");
     printf("    -F FACILITY     log cronjobs output to this facility (implies -s)\n");
+    printf("    -f              remain in foreground\n");
     printf("    -g GROUP=DIR    set directory or file name for crontab group GROUP\n");
     printf("    -g [no]GROUP    enable or disable crontab group GROUP\n");
     printf("    -l PRI          log only messages with syslog priority PRI or higher\n");
     printf("    -m MAILER       set mailer command\n");
+    printf("    -N              disable safety checking (for debugging only!)\n");
     printf("    -o OPTS         set crontab options\n");
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
+    printf("    -S              log to syslog even if running in foreground\n");
+    printf("    -s              log output from cronjobs to syslog\n");
+    printf("\n");
     printf("    -h              print this help text\n");
     printf("    -v              print program version and exit\n");
     printf("\n");
@@ -263,10 +265,11 @@ main(int argc, char **argv)
     struct sigaction act;
     sigset_t sigs;
     pthread_t tid;
+    int log_to_syslog = 0;
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:fNl:m:o:p:sv")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:p:Ssv")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -291,7 +294,7 @@ main(int argc, char **argv)
 	case 'N':
 	    no_safety_checking = 1;
 	    break;
-	    
+
 	case 'f':
 	    foreground = 1;
 	    break;
@@ -302,6 +305,10 @@ main(int argc, char **argv)
 
 	case 'p':
 	    micron_log_dev = optarg;
+	    break;
+
+	case 'S':
+	    log_to_syslog = 1;
 	    break;
 	    
 	case 's':
@@ -344,6 +351,10 @@ main(int argc, char **argv)
 	    micron_log(LOG_CRIT, "daemon failed: %s", strerror(errno));
 	    exit(EXIT_FATAL);
 	}
+	log_to_syslog = 1;
+    }
+
+    if (log_to_syslog) {
 	micron_log_open(progname, LOG_CRON);
 	micron_logger = micron_syslog;
     } else if (micron_options.syslog_facility)
