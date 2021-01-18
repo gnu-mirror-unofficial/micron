@@ -1,0 +1,969 @@
+\input texinfo  @c -*- texinfo -*-
+@setfilename micron.info
+@c %**start of header
+@settitle Micron Manual
+@setchapternewpage odd
+
+@defcodeindex pr
+@defcodeindex op
+@defcodeindex kw
+@defcodeindex fl
+
+@syncodeindex fn cp
+@syncodeindex vr cp
+@syncodeindex op cp
+@syncodeindex pr cp
+@syncodeindex kw cp
+
+@include version.texi
+
+@ifinfo
+@dircategory System Administration
+@direntry
+* micron: (micron).     Flexible cron scheduler.
+* micrond: (micron).    The cron daemon.
+* crontab: (micron).    The crontab command.
+* Crontab format: (micron).  Format of the crontab file.
+@end direntry
+@end ifinfo
+@c %**end of header
+
+@iftex
+@finalout
+@end iftex
+@copying
+Copyright @copyright{} 2021 Sergey Poznyakoff
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover, and no Back-Cover texts.
+A copy of the license is included in the section entitled ``GNU Free
+Documentation License.''
+@end copying
+
+@titlepage
+@title Micron
+@subtitle version @value{VERSION}, @value{UPDATED}
+@author Sergey Poznyakoff.
+@page
+@vskip 0pt plus 1filll
+@insertcopying
+@end titlepage
+
+@ifnothtml
+@page
+@summarycontents
+@page
+@end ifnothtml
+@contents
+
+@ifnottex
+@node Top
+@top Micron
+
+This edition of the @cite{Micron Manual}, last updated
+@value{UPDATED},
+documents @command{micron} Version @value{VERSION}.
+@end ifnottex
+
+@node Overview
+@chapter Overview
+
+@samp{Micron} is an implementation of the UNIX @command{cron} daemon,
+a program that executes periodically various tasks.  It aims to provide
+several enhancements while being mostly backward-compatible with
+the two most widely used cron implementations: Vixie and Dillon crons.
+
+The implementation consists of two binaries: the main daemon @command{micrond}
+and the @command{crontab} utility.
+
+@node Crontabs
+@chapter Crontabs
+
+The instructions specifying what commands to run and when are kept in
+a set of @dfn{crontab} files.  @command{micrond} reads its crontabs at
+startup and loads them to memory.  When running, it keeps track of
+crontab modifications and updates its in-memory tables as soon as a
+modification is detected.
+
+@node Crontab groups
+@section Crontab groups
+The crontabs are stored in several locations, collectively known as
+@dfn{crontab groups}:
+
+@table @dfn
+@item master crontab
+@cindex master crontab
+@flindex /etc/crontab
+Master crontab is read from the file @file{/etc/crontab}.
+
+@item system crontabs
+@cindex system crontab
+@flindex /etc/cron.d
+A collection of crontab files in the @file{/etc/cron.d} directory.
+
+@item user crontabs
+@cindex user crontab
+@flindex /var/spool/cron/crontabs
+Per-user crontabs are located in @file{/var/spool/cron/crontabs}.
+
+@item user group crontabs
+@cindex group crontab
+@flindex /var/spool/cron/crongroups
+A special crontab group intended for use with pseudo-accounts, such
+as @samp{apache} or @samp{bind}.  Crontabs of this group are located in 
+subdirectories of @file{/var/spool/cron/crongroups} named by the
+corresponding account.  This crontab group will be described in
+detail later.
+@end table
+
+Each @emph{active} (i.e. non-empty and non-comment) line in a crontab
+specifies a schedule and a command line to be run according to that
+schedule.  Active lines in master and system crontabs specify also the
+login name of the user on behalf of whom the command must be run. 
+
+Both master and system crontabs are writable only by the super-user.
+
+User and user group crontabs belong to particular users and
+instructions they contain are executed on behalf of their owners.  To
+enable users to manipulate their crontabs, the @command{crontab}
+command is provided.
+
+@node Crontab format
+@section Crontab format
+
+Crontabs used by @command{micrond} are mostly compatible with Vixie
+crontabs.  The leading and trailing whitespace is ignored.  Comments
+are introduced by a hash sign (#) appearing as the first
+non-whitespace character in a line.  Comment lines and empty lines are
+ignored.  Very long lines can be split across several physical lines
+using backslash as continuation character.  Total length of a valid
+crontab line after removing continuation characters cannot exceed 1024
+characters.
+
+Each crontab line is either a variable setting or a cron command.
+
+@node Cron command line
+@subsection Cron command line
+A @dfn{cron command} defines a command to run, a user on behalf of
+which it will be run (in system crontabs), and a running schedule.
+
+The fields are delimited by arbitrary amount of whitespace.
+
+A cron command begins with a cron expression, which defines a time
+schedule.  This expression consists of five fields in this order:
+
+@multitable @columnfractions 0.4 0.6
+@headitem field @tab allowed values
+@item minute       @tab 0-59
+@item hour         @tab 0-23
+@item day of month @tab 1-31
+@item month        @tab 1-12 (or abbreviated names, see below)
+@item day of week  @tab	0-7 (0 or 7 is Sun, or use names)
+@end multitable
+
+A field may contain a single asterisk @samp{*}, which stands for
+``each time unit''.  For example, it means ``each minute'' when used
+in the first field, ``each hour'' in second one, and so on.  Asterisk
+can be followed by a slash and a decimal number, which defines step
+within the interval.  E.g. @samp{*/2} in second field stands for ``each
+second hour''.
+
+The field may also be a comma-delimited list of the following
+constructs:
+
+@table @asis
+@item @var{n}
+A single number.  E.g. @samp{2} in first field means ``second minute of an
+hour''.
+
+@item @var{i}-@var{j}
+Two numbers delimited by a dash define a range.  E.g @samp{2-5} in first
+field is ``minutes 2,3,4, and 5 (inclusive)''.  The order is
+important.  For example, the following schedule:
+
+@example
+55-5 * * * *
+@end example
+
+@noindent
+means ``minutes 55 through 59 and 0 through 5 of the next hour''.
+
+@item @var{i}-@var{j}/@var{n}
+Same as above, but with step of N units, e.g.:
+
+@example
+10-25/5 * * * *
+@end example
+
+@noindent
+which stands for ``minutes 10,15,20,25''.
+@end table
+
+Names can be used in ``month'' and ``day of week'' fields.  Day and
+week names are abbreviated to their first three characters
+(case-insensitive).  Ranges or lists of names are allowed as well.
+
+@cindex day field semantics
+The day of command's execution can be specified by two fields:
+day of month, and day of week.  Their exact meaning depends on the
+selected @dfn{day field semantics}.  There are three cases:
+
+@table @asis
+@item Strict semantics
+@cindex strict day semantics
+The command will be run only when both fields match the current time.
+For example,
+
+@example
+30 4 1,15 * 5
+@end example
+
+@noindent
+means to run the command at 4:30 am each Friday between the 1st and
+15th of each month.
+
+This semantics is the default for @command{micrond}.
+
+@item Vixie semantics
+@cindex vixie day semantics
+The command will be run when either field matches the current time.
+Thus, the previous example would cause a command to be run at 4:30 am
+on the 1st and 15th of each month, plus every Friday.
+
+@item Dillon semantics
+@cindex dillon day semantics
+If both day in the month and a day of week are supplied, the former
+must be integer numbers in range 1-5.  The meaning is Nth such weekday
+in the month.  For example, to run the date command at 11 am on the
+second and third Monday, Tuesday and Wednesday of each month:
+
+@example
+0 11 2,3 * mon-wed date
+@end example
+
+To request the last Monday, etc. in a month, ask for the "5th" one.
+This will always match the last Monday, etc., even if there are only
+four Mondays in the month:
+
+@example
+0 11 1,5 * mon-wed date
+@end example
+
+When the fourth Monday in a month is the last, it will match against
+both 4 and 5, but will only run once if both are specified.
+@end table
+
+The semantics to use is selected by setting the
+@code{_MICRON_DAY_SEMANTICS} (@pxref{_MICRON_DAY_SEMANTICS}) variable
+to one of the following values: @samp{strict}, @samp{vixie}, @samp{dillon}
+(case-insensitive).
+
+Instead of the first five fields, the following macro-definitions can
+be used:
+
+@table @samp
+@kwindex @@reboot
+@item @@reboot
+Run once, at @command{micrond} startup.
+
+@kwindex @@yearly
+@kwindex @@annually
+@item @@yearly
+@itemx @@annually
+Run once a year, @samp{0 0 1 1 *}.
+
+@kwindex @@monthly
+@item @@monthly
+Run once a month, @samp{0 0 1 * *}.
+
+@kwindex @@weekly
+@item @@weekly
+Run once a week, @samp{0 0 * * 0}.
+
+@kwindex @@daily
+@kwindex @@midnight
+@item @@daily
+@itemx @@midnight
+Run once a day, @samp{0 0 * * *}.
+
+@kwindex @@hourly
+@item @@hourly
+Run once an hour, @samp{0 * * * *}.
+@end table
+
+In master crontab (@file{/etc/crontab}) and system crontabs (located in
+@file{/etc/cron.d}), the cron expression is followed by the user field,
+which holds a login name of the user on whose behalf the command will
+be run.
+
+This field is absent in user personal crontabs, since these are always
+run on behalf of the user that owns them,
+
+The rest of line is taken as a shell command to be run when the time
+matches the schedule.  Before running the command, @command{micrond}
+changes the directory to the home directory of the user on whose
+behalf the command is run, modifies the environment as defined by variable
+settings (see below) and runs the command using the shell defined by
+the @code{SHELL} variable (@samp{/bin/sh} by default).
+
+@node Variable setting
+@subsection Variable setting
+@cindex variables in crontab
+Variable settings modify execution environment for subsequent cron
+commands.  Some variables are internal to @command{micrond} and modify
+its behavior.  A variable setting has the form
+
+@example
+@var{name} = @var{value}
+@end example
+
+@noindent
+where @var{name} is the variable name and @var{value} is the value to
+be assigned to it.  Notice several important differences from the
+similar construct in shell.  First of all, optional whitespace is
+allowed on either side of the equals sign.  Secondly, the value is
+assigned verbatim, after removing any trailing and leading whitespace.
+No expansions or substitutions take place.  If you need this kind of
+functionality, move environment manipulations to a shell script and
+invoke it from the cron command.
+
+You don't need to quote @var{value} even if it contains embedded
+whitespace.  There are two cases when quoting becomes necessary: to
+define an empty variable or to preserve leading or trailing
+whitespace.  In the latter case both single and double quotes can be
+used, the only requirement being that both quotes match.  Inside a
+quoted string, a backslash character can be used to escape a quote
+character or another backslash.  To define an empty variable, use a
+pair of quotes.
+
+Finally, the construct
+
+@example
+@var{name} =
+@end example
+
+unsets the variable @var{name}.
+
+A variable setting applies to all cron commands that follow it, until
+another setting overwrites it or the end of file is encountered.
+
+@cindex built-in variables
+@cindex variable, built-in
+@anchor{built-in variables}
+The following variables are @dfn{built-in variables}.  They modify
+handing of the cron commands that follow them, but are not copied to
+the command environment.  Varables prefixed with @samp{_JOB_}
+affect only cron command that follows them, whereas variables prefixed
+with @samp{_MICRON_} affect all commands that follow them, until
+another assignment of the same variable is encountered or the end of
+file is reached.
+
+@defvr {Built-in variable} _MICRON_SYSLOG_FACILITY
+@defvrx {Built-in variable} _JOB_SYSLOG_FACILITY
+If this variable is set to a meaningful syslog facility, the program
+output will be logged to that facility (priority @samp{INFO}), instead
+of mailing it the usual way.
+
+Allowed values for this variable are @samp{auth}, @samp{authpriv},
+@samp{cron}, @samp{daemon}, @samp{ftp}, @samp{lpr}, @samp{mail},
+@samp{news}, @samp{syslog}, @samp{user}, @samp{uucp}, and @samp{local0}
+through @samp{local7}. 
+
+The value @samp{default} means to use the default syslog facility
+(@samp{cron}), and @samp{off} or @samp{none} disables syslog and
+reverts to mailing the program output as directed by the @samp{MAILTO}
+variable.
+@end defvr
+
+@defvr {Built-in variable} _JOB_SYSLOG_TAG
+Sets the syslog tag for the next cron command.  The tag is used only if
+syslog is enabled (by the use of @option{-s} option or by the
+@samp{_MICRON_SYSLOG_FACILITY} setting).  If not specified, the tag
+will be constructed as
+
+@example
+@var{file}:@var{line}(@var{prog})
+@end example
+
+@noindent
+where @var{file} and @var{line} are the file name and line number of the
+line where the cron command appeared and @var{prog} is the first word
+of the command.
+
+@anchor{_MICRON_SYSLOG_TAG}
+@kwindex _MICRON_SYSLOG_TAG
+The global counterpart of this variable, @code{_MICRON_SYSLOG_TAG},
+is provided for completeness.  It is probably of little use, since it
+sets the same tag for all crontab entries.
+@end defvr
+
+@anchor{_MICRON_MAXINSTANCES}
+@defvr {Built-in variable} _MICRON_MAXINSTANCES
+@defvrx {Built-in variable} _JOB_MAXINSTANCES
+An integer value defining how many instances of the same cron job can
+be running simultaneously.  Default is 1, i.e. @command{micrond} will
+refuse to start a job if its previous run has not yet terminated.
+@end defvr
+
+@defvr {Built-in variable} _JOB_MAILTO
+This variable temporarily masks the @code{MAILTO} variable and disables
+the variables @samp{SYSLOG_FACILITY} and @samp{SYSLOG_TAG} for the
+next crontab entry.  After that, the previous values are restored.
+Use it to redirect output of a single crontab entry to a particular address.
+
+@kwindex _MICRON_MAILTO
+The global version of this variable, @code{_MICRON_MAILTO}, is mostly
+equivalent to the traditional @code{MAILTO} variable, except that any
+existing value of @code{MAILTO} is retained in the environment.
+@end defvr
+
+@anchor{_MICRON_DAY_SEMANTICS}
+@defvr {Built-in variable} _MICRON_DAY_SEMANTICS
+@defvrx {Built-in variable} _JOB_DAY_SEMANTICS
+Defines the day semantics.  Allowed values are: @samp{strict},
+@samp{vixie}, and @samp{dillon} (case-insensitive).  @xref{The day
+field semantics}.
+@end defvr
+
+The following variables modify the behavior of @command{micrond} itself.
+
+@defvr {Environment} MAILTO
+Defines an email address or a comma-delimited list of email addresses.
+If any of the cron commands that follow this setting produces anything on
+its standard output or standard error, the output will be collected
+and mailed to the users listed in the @code{MAILTO} variable.  If the
+variable is undefined, the output will be sent to the owner of the
+crontab.  If @code{MAILTO} is set to an empty string, no mail will be
+sent.
+@end defvr
+
+@defvr {Environment} HOME
+Defines the working directory from which the subsequent commands will
+be run.  Defaults to the home directory of the user on whose behalf
+the command is run.
+@end defvr
+
+@defvr {Environment} SHELL
+Defines the shell used to start commands.  Defaults to @samp{/bin/sh}.
+@end defvr
+
+@node micrond
+@chapter micrond
+
+@command{micrond} executes commands periodically as directed by one or
+more @dfn{crontabs}.  Each crontab is a plain text file, where each
+non-empty line contains a formal schedule and a command that must be
+run according to that schedule (a @dfn{cron job}).  System crontabs
+also supply the name of the user on whose behalf the command must be
+run.  Per-user crontabs lack this field, since the commands in them
+are always executed on behalf of the user who owns the crontab.
+
+Normally, a cron jobs is not run if its previous instance is still
+running.  So that if a cron job that is run each minutes takes three
+minutes to finish, it will be actually run once in three minutes.
+However, maximum number of cron job instances that can be run
+simultaneously can be configured in crontab.
+
+Any output the running job produces on its standard output and
+standard error is captured.  Upon termination, it is mailed to the
+owner of the job, i.e. the user on whose behalf the job was run.  The
+message @samp{From:} header is set to the cron job owner name.  The
+@samp{Subject:} header contains the owner login name, hostname of the
+server where the command was run and the command itself, in the
+following format:
+
+@example
+Cron <@var{user}@@@var{host}> @var{command}
+@end example
+
+A copy of execution environment is included in the message in form of
+additional @samp{X-Cron-Env:} headers, each containing a single
+environment variable.
+
+The recipient of the message can be altered by setting the @code{MAILTO}
+variable in the crontab.
+
+The mail is sent using @command{/usr/sbin/sendmail -oi -t}.  The
+administrator can supply alternative mailer command via the
+@option{-m} command line option.
+
+Instead of mailing job outputs, @command{micrond} can be configured to
+send them to a particular syslog facility.  If so configured, the
+output is logged synchronously with the job execution.  The syslog 
+configuration can be global, using the @option{-s} and @option{-o}
+command line options, per-crontab or even per-job, using the
+@code{_MICRON_SYSLOG_FACILITY} variable setting.
+
+On GNU/Linux systems, @command{micrond} monitors each opened crontab
+for modifications and re-reads it as soon as it is written to disk.
+On other systems, it checks crontab modification times each minute and
+re-reads the crontabs for which this value has changed.
+
+@node micrond invocation
+@section Micrond Invocation
+
+@table @option
+@opindex -f
+@item -f
+Remain in foreground.
+
+@opindex -h
+@item -h
+Display a short help summary and exit.
+
+@opindex -g
+@item -g @var{group}=@var{dir}
+Define the directory or file name for crontab group @var{group}.
+Valid group names are: @samp{master}, @samp{system}, @samp{user},
+and @samp{group}.
+
+@opindex -g
+@item -g @var{group}
+@itemx -g no@var{group}
+Enable or disable crontab group @var{group}.  Note, that the
+@code{group} crontab group is disabled by default.
+
+@opindex -l
+@item -l @var{pri}
+Log only messages with syslog priority @var{pri} or higher.  Valid
+arguments in order of increasing priority: @samp{debug}, @samp{info},
+@samp{notice}, @samp{warning}, @samp{err}, @samp{crit}, @samp{alert},
+and @samp{emerg}.
+
+@opindex -m
+@item -m @var{mailer}
+Set the mailer command.  Default is @command{/usr/sbin/sendmail -oi -t}.
+
+@opindex -o
+@item -o @var{options}
+Set crontab options.  The argument is a comma-delimited list of
+variable assignments, e.g.
+
+@example
+-o syslog_facility=daemon,day_semantics=vixie
+@end example
+
+Crontab options control how the crontab entries are interpreted and
+set default values for @command{micrond} built-in variables:
+
+@defvr {micrond variable} syslog_facility
+The facility to use when sending job's output to syslog.  The
+default is @samp{cron}.  It can be modified in crontabs using the
+@code{_MICRON_SYSLOG_FACILITY} and @samp{_JOBS_SYSLOG_FACILITY}
+built-ins.
+
+Setting this variable implies @option{-s} (@pxref{syslog option}).
+@end defvr
+
+@defvr {micrond variable} syslog_tag
+Provides a syslog tag to use when reporting job's output.
+@xref{_MICRON_SYSLOG_TAG}, for details.
+@end defvr
+
+@defvr {micrond variable} maxinstances
+Maximum number of cronjob instances that can be run simultaneously.
+Default is 1.  @xref{_MICRON_MAXINSTANCES}.
+@end defvr
+
+@defvr {micrond variable} day_semantics
+Defines the day field semantics.  Allowed values are
+@samp{strict} (default), @samp{vixie}, and @samp{dillon}.
+@xref{The day field semantics}, for a discussion of day field
+semantics.
+
+See also the @code{_MICRON_DAY_SEMANTICS} built-in variable
+(@pxref{_MICRON_DAY_SEMANTICS}).
+@end defvr
+
+@opindex -p
+@item -p @var{socket}
+Send messages to syslog via this socket.  The argument is either an
+absolute file name of a UNIX socket, or a host name or IPv4 address
+optionally followed by a colon and port number or service name.
+
+@opindex -S
+@item -S
+When running in foreground (see the @option{-f} option), log messages
+from @command{micrond} to the syslog facility @samp{cron}, instead of
+printing them to the standard error.  Not to be confused with the
+@option{-s} option, described below.
+
+@anchor{syslog option}
+@opindex -s
+@item -s
+Log output from cronjobs to syslog.  By default, the @samp{cron}
+facility is used.  Use the @option{-o syslog_facility=@var{f}} option
+to change it to facility @var{f}.
+
+@opindex -v
+@item -v
+Print program version, licensing information and exit.
+@end table
+
+@node crontab
+@chapter The @command{crontab} utility
+The @command{crontab} utility allows the user to list, edit or remove
+personal or group crontabs.
+
+The @command{micrond} cron daemon reads crontabs from several crontab
+groups, two of which contain crontabs for particular system users.
+The @dfn{user crongroup} contains per-user crontabs, and the @dfn{group
+crongroup} contains user crontabs editable by a group of users
+(@pxref{Crontab groups}).
+
+By default, @command{crontab} operates on per-user crontabs.  To edit
+group crontabs, the @option{-g} option must be specifed.
+
+When run without arguments, @command{crontab} enters @dfn{copy mode},
+in which it copies the content of the supplied file to the user
+personal crontab, overwriting its prior content.  For example
+
+@example
+crontab newfile
+@end example
+
+@noindent
+overwrites the current crontab schedule of the user with the content
+of the file @file{newfile}.
+
+To list the content of the crontab, use the @option{-l} option.  It will
+be displayed on standard output.
+
+To edit it, run @command{crontab -e}.  A temporary copy of the crontab
+will be created and loaded to the editor specified by the @env{VISUAL}
+environment variable.  If it is unset, the @env{EDITOR} variable is
+consulted.  If this variable is unset as well, the built-in default
+@samp{vi} will be used. 
+
+Once you quit the editor, the edited crontab will be atomically moved to
+your personal crontab and re-read by @command{micrond}.
+
+The @option{-r} option removes the crontab.  Use it with caution.
+No backup copies are preserved.
+
+When using destructive operations (such as copying or removal), it is
+safer to use the @option{-i} option which instructs the program to ask
+for the user consent before undertaking the modification.
+
+The super-user can address the crontab of a particular user by
+supplying this user's login name with the @option{-u} option.  The use
+of this option is restricted for super-user, except if used together
+with the @option{-g} option.
+
+User crontab groups contain multiple files for each system user.  They
+are useful for certain pseudo-accounts.  For example, a site running
+multiple web services may need to install separate crontabs for each
+of them and to allow users who run these services to edit their
+crontabs.  This is done using the @option{-g} option.  The name of the
+account for which the crontab is edited is supplied with the
+@option{-u} option.  For example, to edit a crontab @samp{portal} in
+account @samp{www-data}, one would use:
+
+@example
+crontab -g -u www-data -e portal
+@end example
+
+The use of group crontabs for account @var{x} is allowed only for
+users who are members of the primary group of @var{x}.
+
+@node crontab invocation
+@section crontab invocation
+
+The crontab usage is:
+
+@table @asis
+@item crontab [-u @var{name}] @var{file}
+Copy mode.  Replace the crontab of the user who invoked the command
+with the content of @var{file}.
+
+The @option{-u} is allowed only for super-user.  With this option, the
+crontab of the user @var{name} is replaced.
+
+@item crontab [-eilr] [-u @var{name}]
+List (@option{-l}), edit (@option{-e}) or remove (@option{-r}) the
+user's crontab.
+
+The @option{-u} is allowed only for super-user.  With this option, the
+command operates on the crontab of the user @var{name}.
+
+@item crontab -g [-u @var{name}] [-eilr] @var{file}
+List (@option{-l}), edit (@option{-e}) or remove (@option{-r}) the
+crontab @var{file} in the crongroup of the current user (or user
+@var{name}). (FIXME-xref group)
+
+The @option{-u} option is allowed for super-user and any user whose
+primary group matches that of the user @var{name}.
+@end table
+
+The following table summarizes command line options of the
+@command{crontab} utility:
+
+@table @option
+@opindex -e
+@item -e
+Edit crontab.
+
+@opindex -g
+@item -g
+Operate on user cron group files.
+
+@opindex -h
+@item -h
+Print a short command line usage summary and exit.
+
+@opindex -i
+@item -i
+Interactively ask before removing or replacing.
+
+@opindex -l
+@item -l
+List crontab content.  When used with the @option{-g} option, this
+option lists the content of the crontab @var{file} in the group.  If
+@var{file} is not supplied, displays the list of available crontabs in
+the group, along with their owners.
+
+@opindex -r
+@item -r
+Remove the crontab.
+
+@opindex -u
+@item -u @var{name}
+Operate on crontab of user @var{name}.
+
+@opindex -v
+@item -v
+Print program version, licensing information and exit.
+@end table
+
+@node Features
+@chapter Differences between micron and other cron implementations
+
+The following features of @command{micrond} differ from the two
+reference @samp{cron} implementations.
+
+@node User group crontabs
+@section User group crontabs
+
+User group crontabs are an experimental feature designed to facilitate
+maintenance of per-service crontabs.  Consider, for example, a web
+server that runs multiple web sites maintained by various users who
+need to run periodic backend jobs on behalf of the account the httpd
+server runs as.  User group crontabs make it possible without
+intervention of the system administrator.  Let's assume httpd runs as
+the user @samp{apache}.  The system administrator creates a directory
+@file{/var/spool/cron/crongroups/apache}, and sets @samp{apache} as
+its owner:
+
+@example
+@group
+mkdir /var/spool/cron/crongroups/apache
+chown apache: /var/spool/cron/crongroups/apache
+@end group
+@end example
+
+Then, he adds login names of the users who should be able to edit apache
+cronjobs to the primary group of the @samp{apache} user.  Once done, these
+users become able to create and edit crontabs in this directory using
+the @command{crontab} command with the @option{-g} option (short for
+@samp{group}).  For example, the command 
+
+@example
+crontab -u apache -g -e myproject
+@end example
+
+edits the file @file{myproject} in this directory.
+
+User group crontabs are disabled by default.  To enable them, run
+@command{micrond} with the @option{-g group} option.
+
+@node Long crontab lines
+@section Long crontab lines
+
+Very long crontab lines can be split across several physical lines
+using the familiar backslash continuation technique: a backslash
+appearing immediately before the ending newline character is removed
+along with the newline and the content of the next line is appended in
+its place.  Multiple line continuations are allowed, as long as the
+total line length does not exceed 1024 characters.
+
+@node Built-in variables
+@section Built-in variables
+
+A number of built-in variables control the interpretation of crontab
+entries and execution of commands.  Each built-in variable has two
+name variants: the name prefixed with @samp{_JOB} affects only the
+cron job definition that immediately follows it (with optional
+variable assignments in between), whereas the name prefixed with
+@samp{_MICRON} affects all commands that follow them, until another
+assignment of the same variable is encountered or the end of 
+file is reached.  For example, the following fragment instructs
+@command{micrond} to log all output produced by the command
+@command{run-periodic} to syslog facility @samp{daemon} using the tag
+@samp{hourly}.  These two settings affect only this particular
+command:
+
+@example
+@group
+_JOB_SYSLOG_FACILITY = daemon
+_JOB_SYSLOG_TAG = hourly
+
+15 * * * *  root  run-periodic
+@end group
+@end example
+
+The built-in variables are described in detail in the sections that
+follow.  For brevity, they are referred to using the @samp{_MICRON}
+prefix.
+
+@node The day field semantics
+@section The day field semantics
+@cindex day field semantics
+
+In a crontab schedule, the day of a command's execution can be
+specified by two fields: day of month (field 3), and day of week
+(field 5).  If both fields are restricted (i.e. are not @samp{*}),
+their interpretation differs among various implementations.  Vixie
+cron will run the command when either field matches the current time
+(the fields are joined by a logical OR).  Dillon's cron interprets the
+3rd field as an ordinal number of weekday in month (so that allowed
+numeric values of the 3rd field in this case are 1-5).  Consider for
+example the following schedule: 
+
+@example
+0 11 1,4 * 1-3
+@end example
+
+@noindent
+For Vixie cron, this means ``run the command on each 1st and 4th day of
+the month as well as on each Monday, Tuesday and Wednesday''.  The
+meaning of this schedule for Dillon's cron is: ``run the command on
+each first and fourth Monday, Tuesday and Wednesday in the month''.
+
+The semantics used by @command{micron} is configurable.  By default it
+assumes the two fields to be joined by a logical AND, i.e. the example
+above would mean ``each first and fourth day of the month @emph{if}
+the day of week is Monday, Tuesday or Wednesday''.  The use of Vixie
+or Dillon semantics can be requested by setting the
+@code{_MICRON_DAY_SEMANTICS} variable in the crontab.  For example,
+the line:
+
+@example
+_MICRON_DAY_SEMANTICS = Vixie
+@end example
+
+requests the semantics used by Vixie cron.
+
+@node Variable assignment in crontabs
+@section Variable assignment in crontabs
+
+Variable assignments can appear anyplace in a crontab.  The modified
+environment remains in effect for all subsequent commands until
+changed by another assignment or the end of file is reached, whichever
+happens first.  For example, the output of the following two example
+entries is mailed to two different users:
+
+@example
+@group
+MAILTO=one
+* * * * * command one
+MAILTO=two
+* * * * * command two
+@end group
+@end example
+
+@node Job output report
+@section Job output report
+
+Output of a crontab job can be either mailed to its owner (a
+traditional behavior) or reported via @command{syslog} to arbitrary 
+facility.  This can be configured both globally (by the @option{-s}
+command line option), or individually in a crontab (using the
+@code{_MICRON_SYSLOG_FACILITY} variable).  Syslog tag can be supplied  
+using the @code{_MICRON_SYSLOG_TAG} variable.  In its absence, syslog
+tag is constructed from the location of the job in the crontab file
+and the first word of the command, e.g.:
+
+@example
+/etc/crontab:14(run-parts)
+@end example
+
+@node Simultaneous job execution
+@section Simultaneous job execution
+
+The number of simultaneously running instances of a cron job is
+limited.  It is controlled by the value of the @code{_MICRON_MAXINSTANCES}
+variable.  The default value is 1, which means that the job won't be
+started until its previous instance terminates.  This differs both
+from Vixie implementation, where a job is started no matter how many
+of its instances are running, and from Dillon's cron, which refuses to
+start a job until its prior instance has terminated. 
+
+@node Detection of crontab modifications
+@section Detection of crontab modifications
+
+On GNU/Linux systems, @command{micrond} uses
+@uref{http://man.gnu.org.ua/manpage/?7+inotify,inotify} to track
+crontab modifications, which means that any change to a crontab is
+noticed as soon as the crontab file is saved.
+
+On other systems, @command{micrond} relies on checking the crontab
+modification times each minute, which is less effective.  
+
+The use of the @samp{kqueue} interface on *BSD systems is planned in
+future versions.
+
+@node Downloads and Installation
+@chapter Downloads and Installation
+
+The program can be downloaded from
+@uref{https://download.gnu.org.ua/release/micron}.  Before installation,
+create a group which will be used as owner for the user and user group
+crontab directories.  The @command{crontab} binary will be installed as
+set-GID to that group.  By default, the group is named @samp{crontab}.
+Assuming this, the usual build sequence is
+
+@example
+@group
+./configure
+make
+make install
+@end group
+@end example
+
+If you chose another group name, supply it to @command{configure}
+using the @option{--with-crontab-gid} option.
+
+The above commands will install the package under @file{/usr/local}.  That
+is, the server will be installed as @file{/usr/local/sbin/micron}, the
+@command{crontab} utility as @file{/usr/local/bin/crontab}, etc.  If
+that's not what you want, use the @option{--prefix} option to specify
+the installation prefix, e.g.
+
+@example
+./configure --prefix=/usr
+@end example
+
+Please refer to the @file{INSTALL} document in the source directory
+for a discussion of available options to configure and their effect.
+
+@node Bug reports
+@chapter Bug reports
+
+If you think you found a bug in @command{micron} or in its
+documentation, please send a mail to @email{gray@@gnu.org} (Sergey
+Poznyakoff) or use the bug tracker at
+@uref{https://puszcza.gnu.org.ua/bugs/?group=micron} (requires
+authorization).
+
+@node GNU Free Documentation License
+@appendix GNU Free Documentation License
+
+@include fdl.texi
+
+@node Index
+@unnumbered Index
+@printindex cp
+
+@bye

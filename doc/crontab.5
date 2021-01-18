@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 5 "May 21, 2020" "CRONTAB" "File Formats Manual"
+.TH CRONTAB 5 "January 18, 2021" "CRONTAB" "File Formats Manual"
 .SH NAME
 crontab \- tables for driving micrond
 .SH DESCRIPTION
@@ -127,7 +127,7 @@ When the fourth Monday in a month is the last, it will match against
 both 4 and 5, but will only run once if both are specified.
 .PP
 The semantics to use is selected by setting the
-.B CRON_DAY_SEMANTICS
+.B _MICRON_DAY_SEMANTICS
 variable to one of the following values:
 .BR strict ,
 .BR vixie ,
