@@ -72,8 +72,8 @@ documents @command{micron} Version @value{VERSION}.
 
 @samp{Micron} is an implementation of the UNIX @command{cron} daemon,
 a program that executes periodically various tasks.  It aims to provide
-several enhancements while being mostly backward-compatible with
-the two most widely used cron implementations: Vixie and Dillon crons.
+several enhancements while being backward-compatible with the two most
+widely used cron implementations: Vixie and Dillon crons.
 
 The implementation consists of two binaries: the main daemon @command{micrond}
 and the @command{crontab} utility.
@@ -87,10 +87,10 @@ startup and loads them to memory.  When running, it keeps track of
 crontab modifications and updates its in-memory tables as soon as a
 modification is detected.
 
-@node Crontab groups
-@section Crontab groups
+@node Crongroups
+@section Crontab Groups
 The crontabs are stored in several locations, collectively known as
-@dfn{crontab groups}:
+@dfn{crontab groups} or @dfn{crongroups}, for short:
 
 @table @dfn
 @item master crontab
@@ -114,8 +114,8 @@ Per-user crontabs are located in @file{/var/spool/cron/crontabs}.
 A special crontab group intended for use with pseudo-accounts, such
 as @samp{apache} or @samp{bind}.  Crontabs of this group are located in 
 subdirectories of @file{/var/spool/cron/crongroups} named by the
-corresponding account.  This crontab group will be described in
-detail later.
+corresponding account.  This crontab group is described in detail
+in @ref{User Group Crontabs}.
 @end table
 
 Each @emph{active} (i.e. non-empty and non-comment) line in a crontab
@@ -128,39 +128,40 @@ Both master and system crontabs are writable only by the super-user.
 User and user group crontabs belong to particular users and
 instructions they contain are executed on behalf of their owners.  To
 enable users to manipulate their crontabs, the @command{crontab}
-command is provided.
+command is provided (@pxref{crontab}).
 
-@node Crontab format
-@section Crontab format
+@node Crontab Format
+@section Crontab Format
 
 Crontabs used by @command{micrond} are mostly compatible with Vixie
-crontabs.  The leading and trailing whitespace is ignored.  Comments
-are introduced by a hash sign (#) appearing as the first
-non-whitespace character in a line.  Comment lines and empty lines are
-ignored.  Very long lines can be split across several physical lines
-using backslash as continuation character.  Total length of a valid
-crontab line after removing continuation characters cannot exceed 1024
-characters.
+crontabs.  They are plain text, line-oriented files.  The leading and
+trailing whitespace is ignored.  Comments are introduced by a hash
+sign (#) appearing as the first non-whitespace character in a line.
+Comments and empty lines are ignored.  Very long lines can be split
+across several physical lines using backslash as continuation
+character.  Total length of a valid crontab line after removing
+continuation characters cannot exceed 1024 characters.
 
-Each crontab line is either a variable setting or a cron command.
+Each crontab line is either a variable setting or a cronjob definition.
 
-@node Cron command line
-@subsection Cron command line
-A @dfn{cron command} defines a command to run, a user on behalf of
-which it will be run (in system crontabs), and a running schedule.
+@node Cronjob Definition
+@subsection Cronjob Definition
+A @dfn{cronjob definition} is a line in crontab that defines a
+running schedule, the user on whose behalf the job will be run (in
+system crontabs), and the command that will be run.
 
 The fields are delimited by arbitrary amount of whitespace.
 
-A cron command begins with a cron expression, which defines a time
-schedule.  This expression consists of five fields in this order:
+The cronjob definition begins with a @dfn{cron expression}, which
+defines a time schedule.  It consists of five fields in this order:
 
 @multitable @columnfractions 0.4 0.6
 @headitem field @tab allowed values
 @item minute       @tab 0-59
 @item hour         @tab 0-23
 @item day of month @tab 1-31
-@item month        @tab 1-12 (or abbreviated names, see below)
-@item day of week  @tab	0-7 (0 or 7 is Sun, or use names)
+@item month        @tab 1-12 (or abbreviated month names)
+@item day of week  @tab	0-7 (0 or 7 is Sun, or abbreviated day names)
 @end multitable
 
 A field may contain a single asterisk @samp{*}, which stands for
@@ -210,7 +211,7 @@ The day of command's execution can be specified by two fields:
 day of month, and day of week.  Their exact meaning depends on the
 selected @dfn{day field semantics}.  There are three cases:
 
-@table @asis
+@table @dfn
 @item Strict semantics
 @cindex strict day semantics
 The command will be run only when both fields match the current time.
@@ -256,14 +257,14 @@ both 4 and 5, but will only run once if both are specified.
 @end table
 
 The semantics to use is selected by setting the
-@code{_MICRON_DAY_SEMANTICS} (@pxref{_MICRON_DAY_SEMANTICS}) variable
-to one of the following values: @samp{strict}, @samp{vixie}, @samp{dillon}
+@env{_MICRON_DAY_SEMANTICS} (@pxref{_MICRON_DAY_SEMANTICS}) variable
+to one of the following values: @code{strict}, @code{vixie}, @code{dillon}
 (case-insensitive).
 
 Instead of the first five fields, the following macro-definitions can
 be used:
 
-@table @samp
+@table @code
 @kwindex @@reboot
 @item @@reboot
 Run once, at @command{micrond} startup.
@@ -304,12 +305,14 @@ run on behalf of the user that owns them,
 The rest of line is taken as a shell command to be run when the time
 matches the schedule.  Before running the command, @command{micrond}
 changes the directory to the home directory of the user on whose
-behalf the command is run, modifies the environment as defined by variable
-settings (see below) and runs the command using the shell defined by
-the @code{SHELL} variable (@samp{/bin/sh} by default).
+behalf the command is run (as defined by the @env{HOME} environment
+variable, @pxref{HOME}), modifies the environment as defined by variable
+settings (@pxref{Variable Settings}) and runs the command using the
+shell defined by the @env{SHELL} variable (@samp{/bin/sh} by default,
+@pxref{SHELL}).
 
-@node Variable setting
-@subsection Variable setting
+@node Variable Settings
+@subsection Variable Settings
 @cindex variables in crontab
 Variable settings modify execution environment for subsequent cron
 commands.  Some variables are internal to @command{micrond} and modify
@@ -330,7 +333,7 @@ functionality, move environment manipulations to a shell script and
 invoke it from the cron command.
 
 You don't need to quote @var{value} even if it contains embedded
-whitespace.  There are two cases when quoting becomes necessary: to
+whitespace.  There are only two cases when quoting becomes necessary: to
 define an empty variable or to preserve leading or trailing
 whitespace.  In the latter case both single and double quotes can be
 used, the only requirement being that both quotes match.  Inside a
@@ -344,6 +347,7 @@ Finally, the construct
 @var{name} =
 @end example
 
+@noindent
 unsets the variable @var{name}.
 
 A variable setting applies to all cron commands that follow it, until
@@ -353,34 +357,36 @@ another setting overwrites it or the end of file is encountered.
 @cindex variable, built-in
 @anchor{built-in variables}
 The following variables are @dfn{built-in variables}.  They modify
-handing of the cron commands that follow them, but are not copied to
+the handling of cron commands that follow them, but are not copied to
 the command environment.  Varables prefixed with @samp{_JOB_}
-affect only cron command that follows them, whereas variables prefixed
-with @samp{_MICRON_} affect all commands that follow them, until
-another assignment of the same variable is encountered or the end of
-file is reached.
+affect only the first cron command that appears after them, whereas
+variables prefixed with @samp{_MICRON_} affect all commands that
+follow them, until another assignment of the same variable is
+encountered or the end of the file is reached.
 
+@anchor{_MICRON_SYSLOG_FACILITY}
 @defvr {Built-in variable} _MICRON_SYSLOG_FACILITY
 @defvrx {Built-in variable} _JOB_SYSLOG_FACILITY
 If this variable is set to a meaningful syslog facility, the program
 output will be logged to that facility (priority @samp{INFO}), instead
 of mailing it the usual way.
 
-Allowed values for this variable are @samp{auth}, @samp{authpriv},
-@samp{cron}, @samp{daemon}, @samp{ftp}, @samp{lpr}, @samp{mail},
-@samp{news}, @samp{syslog}, @samp{user}, @samp{uucp}, and @samp{local0}
-through @samp{local7}. 
+Allowed values for this variable are @code{auth}, @code{authpriv},
+@code{cron}, @code{daemon}, @code{ftp}, @code{lpr}, @code{mail},
+@code{news}, @code{syslog}, @code{user}, @code{uucp}, and @code{local0}
+through @code{local7}. 
 
-The value @samp{default} means to use the default syslog facility
-(@samp{cron}), and @samp{off} or @samp{none} disables syslog and
-reverts to mailing the program output as directed by the @samp{MAILTO}
-variable.
+The value @code{default} means to use the default syslog facility
+(@code{cron}), and @code{off} or @code{none} disables syslog and
+reverts to mailing the program output as directed by the @env{MAILTO}
+variable (@pxref{MAILTO}).
 @end defvr
 
+@anchor{_JOB_SYSLOG_TAG}
 @defvr {Built-in variable} _JOB_SYSLOG_TAG
 Sets the syslog tag for the next cron command.  The tag is used only if
 syslog is enabled (by the use of @option{-s} option or by the
-@samp{_MICRON_SYSLOG_FACILITY} setting).  If not specified, the tag
+@env{_MICRON_SYSLOG_FACILITY} setting).  If not specified, the tag
 will be constructed as
 
 @example
@@ -394,7 +400,7 @@ of the command.
 
 @anchor{_MICRON_SYSLOG_TAG}
 @kwindex _MICRON_SYSLOG_TAG
-The global counterpart of this variable, @code{_MICRON_SYSLOG_TAG},
+The global counterpart of this variable, @env{_MICRON_SYSLOG_TAG},
 is provided for completeness.  It is probably of little use, since it
 sets the same tag for all crontab entries.
 @end defvr
@@ -408,43 +414,53 @@ refuse to start a job if its previous run has not yet terminated.
 @end defvr
 
 @defvr {Built-in variable} _JOB_MAILTO
-This variable temporarily masks the @code{MAILTO} variable and disables
-the variables @samp{SYSLOG_FACILITY} and @samp{SYSLOG_TAG} for the
+This variable temporarily masks the @env{MAILTO} variable and disables
+the variables @env{SYSLOG_FACILITY} and @env{SYSLOG_TAG} for the
 next crontab entry.  After that, the previous values are restored.
-Use it to redirect output of a single crontab entry to a particular address.
+Use it to redirect the output of a single crontab entry to a
+particular address.
 
 @kwindex _MICRON_MAILTO
-The global version of this variable, @code{_MICRON_MAILTO}, is mostly
-equivalent to the traditional @code{MAILTO} variable, except that any
-existing value of @code{MAILTO} is retained in the environment.
+The global version of this variable, @env{_MICRON_MAILTO}, is mostly
+equivalent to the traditional @env{MAILTO} variable, except that any
+existing value of @env{MAILTO} is retained in the environment.
+
+@xref{mailing the job output}, for the detailed discussion of how the
+output is mailed.
 @end defvr
 
 @anchor{_MICRON_DAY_SEMANTICS}
 @defvr {Built-in variable} _MICRON_DAY_SEMANTICS
 @defvrx {Built-in variable} _JOB_DAY_SEMANTICS
-Defines the day semantics.  Allowed values are: @samp{strict},
-@samp{vixie}, and @samp{dillon} (case-insensitive).  @xref{The day
-field semantics}.
+Defines the day semantics.  Allowed values are: @code{strict},
+@code{vixie}, and @code{dillon} (case-insensitive).  @xref{Day
+Field Semantics}.
 @end defvr
 
 The following variables modify the behavior of @command{micrond} itself.
 
+@anchor{MAILTO}
 @defvr {Environment} MAILTO
 Defines an email address or a comma-delimited list of email addresses.
 If any of the cron commands that follow this setting produces anything on
 its standard output or standard error, the output will be collected
-and mailed to the users listed in the @code{MAILTO} variable.  If the
+and mailed to the users listed in the @env{MAILTO} variable.  If the
 variable is undefined, the output will be sent to the owner of the
-crontab.  If @code{MAILTO} is set to an empty string, no mail will be
+crontab.  If @env{MAILTO} is set to an empty string, no mail will be
 sent.
+
+@xref{mailing the job output}, for the detailed discussion of how the
+output is mailed.
 @end defvr
 
+@anchor{HOME}
 @defvr {Environment} HOME
 Defines the working directory from which the subsequent commands will
 be run.  Defaults to the home directory of the user on whose behalf
 the command is run.
 @end defvr
 
+@anchor{SHELL}
 @defvr {Environment} SHELL
 Defines the shell used to start commands.  Defaults to @samp{/bin/sh}.
 @end defvr
@@ -453,24 +469,34 @@ Defines the shell used to start commands.  Defaults to @samp{/bin/sh}.
 @chapter micrond
 
 @command{micrond} executes commands periodically as directed by one or
-more @dfn{crontabs}.  Each crontab is a plain text file, where each
-non-empty line contains a formal schedule and a command that must be
-run according to that schedule (a @dfn{cron job}).  System crontabs
-also supply the name of the user on whose behalf the command must be
-run.  Per-user crontabs lack this field, since the commands in them
-are always executed on behalf of the user who owns the crontab.
+more @dfn{crontabs}.  @xref{Crontab Format}, for a discussion of
+crontab files.
 
 Normally, a cron jobs is not run if its previous instance is still
-running.  So that if a cron job that is run each minutes takes three
-minutes to finish, it will be actually run once in three minutes.
-However, maximum number of cron job instances that can be run
-simultaneously can be configured in crontab.
+running.  For instance, if a cron job that is scheduled to run each
+minute takes three minutes to finish, it will be actually run once in
+three minutes.  However, maximum number of cron job instances that can
+be run simultaneously can be configured in crontab
+(@pxref{_MICRON_MAXINSTANCES}).
 
+@anchor{mailing the job output}
+@cindex email, job output
+@cindex @code{From:} header, job output mail
 Any output the running job produces on its standard output and
 standard error is captured.  Upon termination, it is mailed to the
 owner of the job, i.e. the user on whose behalf the job was run.  The
-message @samp{From:} header is set to the cron job owner name.  The
-@samp{Subject:} header contains the owner login name, hostname of the
+message @code{From:} header is constructed as follows:
+
+@example
+From: (Cron daemon) <@var{owner}@@@var{host}>
+@end example
+
+@noindent
+where @var{owner} is the login name of the job owner, and @var{host}
+is the name of the host where it was run.
+
+@cindex @code{Subject:} header, job output mail
+The @code{Subject:} header contains the owner login name, hostname of the
 server where the command was run and the command itself, in the
 following format:
 
@@ -478,23 +504,24 @@ following format:
 Cron <@var{user}@@@var{host}> @var{command}
 @end example
 
+@cindex @code{X-Cron-Env:}, job output mail
 A copy of execution environment is included in the message in form of
-additional @samp{X-Cron-Env:} headers, each containing a single
+additional @code{X-Cron-Env:} headers, each containing a single
 environment variable.
 
-The recipient of the message can be altered by setting the @code{MAILTO}
+The recipient of the message can be altered by setting the @env{MAILTO}
 variable in the crontab.
 
 The mail is sent using @command{/usr/sbin/sendmail -oi -t}.  The
 administrator can supply alternative mailer command via the
 @option{-m} command line option.
 
-Instead of mailing job outputs, @command{micrond} can be configured to
-send them to a particular syslog facility.  If so configured, the
+Instead of mailing the job output, @command{micrond} can be configured to
+send it to a particular syslog facility.  If so configured, the
 output is logged synchronously with the job execution.  The syslog 
 configuration can be global, using the @option{-s} and @option{-o}
 command line options, per-crontab or even per-job, using the
-@code{_MICRON_SYSLOG_FACILITY} variable setting.
+@env{_MICRON_SYSLOG_FACILITY} variable setting.
 
 On GNU/Linux systems, @command{micrond} monitors each opened crontab
 for modifications and re-reads it as soon as it is written to disk.
@@ -502,7 +529,19 @@ On other systems, it checks crontab modification times each minute and
 re-reads the crontabs for which this value has changed.
 
 @node micrond invocation
-@section Micrond Invocation
+@section micrond Invocation
+
+The @command{micrond} daemon takes no command line arguments.  Command
+line options can be provided, that alter its behavior.
+
+Unless otherwise configured by the options, upon startup
+@command{micrond} disconnects from the controlling terminal and
+remains in the background.  During normal execution it logs its
+diagnostic messages (if any) via @code{syslog} facility @samp{cron}.
+Eventual output and error diagnostics from the invoked cron jobs are
+mailed to the job owner, as described in @ref{mailing the job output}.
+
+The following options modify the @command{micrond} behavior:
 
 @table @option
 @opindex -f
@@ -516,8 +555,8 @@ Display a short help summary and exit.
 @opindex -g
 @item -g @var{group}=@var{dir}
 Define the directory or file name for crontab group @var{group}.
-Valid group names are: @samp{master}, @samp{system}, @samp{user},
-and @samp{group}.
+Valid group names are: @code{master}, @code{system}, @code{user},
+and @code{group}.
 
 @opindex -g
 @item -g @var{group}
@@ -528,9 +567,9 @@ Enable or disable crontab group @var{group}.  Note, that the
 @opindex -l
 @item -l @var{pri}
 Log only messages with syslog priority @var{pri} or higher.  Valid
-arguments in order of increasing priority: @samp{debug}, @samp{info},
-@samp{notice}, @samp{warning}, @samp{err}, @samp{crit}, @samp{alert},
-and @samp{emerg}.
+arguments are, in order of increasing priority: @code{debug}, @code{info},
+@code{notice}, @code{warning}, @code{err}, @code{crit}, @code{alert},
+and @code{emerg}.
 
 @opindex -m
 @item -m @var{mailer}
@@ -551,7 +590,7 @@ set default values for @command{micrond} built-in variables:
 @defvr {micrond variable} syslog_facility
 The facility to use when sending job's output to syslog.  The
 default is @samp{cron}.  It can be modified in crontabs using the
-@code{_MICRON_SYSLOG_FACILITY} and @samp{_JOBS_SYSLOG_FACILITY}
+@env{_MICRON_SYSLOG_FACILITY} and @env{_JOBS_SYSLOG_FACILITY}
 built-ins.
 
 Setting this variable implies @option{-s} (@pxref{syslog option}).
@@ -569,11 +608,11 @@ Default is 1.  @xref{_MICRON_MAXINSTANCES}.
 
 @defvr {micrond variable} day_semantics
 Defines the day field semantics.  Allowed values are
-@samp{strict} (default), @samp{vixie}, and @samp{dillon}.
-@xref{The day field semantics}, for a discussion of day field
+@code{strict} (default), @code{vixie}, and @code{dillon}.
+@xref{Day Field Semantics}, for a discussion of day field
 semantics.
 
-See also the @code{_MICRON_DAY_SEMANTICS} built-in variable
+See also the @env{_MICRON_DAY_SEMANTICS} built-in variable
 (@pxref{_MICRON_DAY_SEMANTICS}).
 @end defvr
 
@@ -603,7 +642,7 @@ Print program version, licensing information and exit.
 @end table
 
 @node crontab
-@chapter The @command{crontab} utility
+@chapter The @command{crontab} Utility
 The @command{crontab} utility allows the user to list, edit or remove
 personal or group crontabs.
 
@@ -611,7 +650,7 @@ The @command{micrond} cron daemon reads crontabs from several crontab
 groups, two of which contain crontabs for particular system users.
 The @dfn{user crongroup} contains per-user crontabs, and the @dfn{group
 crongroup} contains user crontabs editable by a group of users
-(@pxref{Crontab groups}).
+(@pxref{Crongroups}).
 
 By default, @command{crontab} operates on per-user crontabs.  To edit
 group crontabs, the @option{-g} option must be specifed.
@@ -668,8 +707,8 @@ crontab -g -u www-data -e portal
 The use of group crontabs for account @var{x} is allowed only for
 users who are members of the primary group of @var{x}.
 
-@node crontab invocation
-@section crontab invocation
+@node crontab Invocation
+@section crontab Invocation
 
 The crontab usage is:
 
@@ -691,7 +730,7 @@ command operates on the crontab of the user @var{name}.
 @item crontab -g [-u @var{name}] [-eilr] @var{file}
 List (@option{-l}), edit (@option{-e}) or remove (@option{-r}) the
 crontab @var{file} in the crongroup of the current user (or user
-@var{name}). (FIXME-xref group)
+@var{name}). (@pxref{User Group Crontabs})
 
 The @option{-u} option is allowed for super-user and any user whose
 primary group matches that of the user @var{name}.
@@ -738,13 +777,13 @@ Print program version, licensing information and exit.
 @end table
 
 @node Features
-@chapter Differences between micron and other cron implementations
+@chapter Key Features
 
 The following features of @command{micrond} differ from the two
 reference @samp{cron} implementations.
 
-@node User group crontabs
-@section User group crontabs
+@node User Group Crontabs
+@section User Group Crontabs
 
 User group crontabs are an experimental feature designed to facilitate
 maintenance of per-service crontabs.  Consider, for example, a web
@@ -778,8 +817,8 @@ edits the file @file{myproject} in this directory.
 User group crontabs are disabled by default.  To enable them, run
 @command{micrond} with the @option{-g group} option.
 
-@node Long crontab lines
-@section Long crontab lines
+@node Long Crontab Lines
+@section Long Crontab Lines
 
 Very long crontab lines can be split across several physical lines
 using the familiar backslash continuation technique: a backslash
@@ -788,8 +827,8 @@ along with the newline and the content of the next line is appended in
 its place.  Multiple line continuations are allowed, as long as the
 total line length does not exceed 1024 characters.
 
-@node Built-in variables
-@section Built-in variables
+@node Built-in Variables
+@section Built-in Variables
 
 A number of built-in variables control the interpretation of crontab
 entries and execution of commands.  Each built-in variable has two
@@ -813,12 +852,12 @@ _JOB_SYSLOG_TAG = hourly
 @end group
 @end example
 
-The built-in variables are described in detail in the sections that
-follow.  For brevity, they are referred to using the @samp{_MICRON}
-prefix.
+The built-in variables are described in detail in @ref{built-in variables}.
+For brevity, in the subsequent sections they are referred to using the
+@samp{_MICRON} prefix.
 
-@node The day field semantics
-@section The day field semantics
+@node Day Field Semantics
+@section Day Field Semantics
 @cindex day field semantics
 
 In a crontab schedule, the day of a command's execution can be
@@ -846,7 +885,7 @@ assumes the two fields to be joined by a logical AND, i.e. the example
 above would mean ``each first and fourth day of the month @emph{if}
 the day of week is Monday, Tuesday or Wednesday''.  The use of Vixie
 or Dillon semantics can be requested by setting the
-@code{_MICRON_DAY_SEMANTICS} variable in the crontab.  For example,
+@env{_MICRON_DAY_SEMANTICS} variable in the crontab.  For example,
 the line:
 
 @example
@@ -855,8 +894,10 @@ _MICRON_DAY_SEMANTICS = Vixie
 
 requests the semantics used by Vixie cron.
 
-@node Variable assignment in crontabs
-@section Variable assignment in crontabs
+@xref{_MICRON_DAY_SEMANTICS}, for a detailed description of this variable.
+
+@node Variable Assignments in Crontabs
+@section Variable Assignments in Crontabs
 
 Variable assignments can appear anyplace in a crontab.  The modified
 environment remains in effect for all subsequent commands until
@@ -873,35 +914,39 @@ MAILTO=two
 @end group
 @end example
 
-@node Job output report
-@section Job output report
+@node Job Output Report
+@section Job Output Report
 
 Output of a crontab job can be either mailed to its owner (a
 traditional behavior) or reported via @command{syslog} to arbitrary 
 facility.  This can be configured both globally (by the @option{-s}
 command line option), or individually in a crontab (using the
-@code{_MICRON_SYSLOG_FACILITY} variable).  Syslog tag can be supplied  
-using the @code{_MICRON_SYSLOG_TAG} variable.  In its absence, syslog
-tag is constructed from the location of the job in the crontab file
-and the first word of the command, e.g.:
+@env{_MICRON_SYSLOG_FACILITY} variable,
+@pxref{_MICRON_SYSLOG_FACILITY}).  Syslog tag can be supplied   
+using the @env{_JOB_SYSLOG_TAG} variable
+(@pxref{_JOB_SYSLOG_TAG}).  In its absence, syslog tag is
+constructed from the location of the job in the crontab file and the
+first word of the command, e.g.:
 
 @example
 /etc/crontab:14(run-parts)
 @end example
 
-@node Simultaneous job execution
-@section Simultaneous job execution
+@node Simultaneous Job Execution
+@section Simultaneous Job Execution
 
 The number of simultaneously running instances of a cron job is
-limited.  It is controlled by the value of the @code{_MICRON_MAXINSTANCES}
+limited.  It is controlled by the value of the @env{_MICRON_MAXINSTANCES}
 variable.  The default value is 1, which means that the job won't be
 started until its previous instance terminates.  This differs both
 from Vixie implementation, where a job is started no matter how many
 of its instances are running, and from Dillon's cron, which refuses to
 start a job until its prior instance has terminated. 
 
-@node Detection of crontab modifications
-@section Detection of crontab modifications
+@xref{_MICRON_MAXINSTANCES}.
+
+@node Detection of Crontab Modifications
+@section Detection of Crontab Modifications
 
 On GNU/Linux systems, @command{micrond} uses
 @uref{http://man.gnu.org.ua/manpage/?7+inotify,inotify} to track
@@ -949,7 +994,7 @@ Please refer to the @file{INSTALL} document in the source directory
 for a discussion of available options to configure and their effect.
 
 @node Bug reports
-@chapter Bug reports
+@chapter Bug Reports
 
 If you think you found a bug in @command{micron} or in its
 documentation, please send a mail to @email{gray@@gnu.org} (Sergey
@@ -965,5 +1010,13 @@ authorization).
 @node Index
 @unnumbered Index
 @printindex cp
+
+@ifset WEBDOC
+@ifhtml
+@node This Manual in Other Formats
+@unnumbered This Manual in Other Formats
+@include otherdoc.texi
+@end ifhtml
+@end ifset
 
 @bye
