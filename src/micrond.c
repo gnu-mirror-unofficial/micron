@@ -507,6 +507,90 @@ catfilename(char const *dir, char const *file)
     return buf;
 }
 
+/*
+ * String support for cronjob_options.
+ */
+
+/* Return a pointer to the string value of S. */
+static inline char const *
+string_value(String s)
+{
+    return s ? s->str : NULL;
+}
+
+/*
+ * Compute size of the String object able to store nul-terminated string of
+ * length LEN.
+*/
+static inline size_t
+string_reference_size(size_t len)
+{
+    return sizeof(struct string_reference) + len + 1;
+}
+
+/* Increase reference counter of S. */
+static inline void
+string_ref(String s)
+{
+    if (s)
+	s->refcnt++;
+}
+
+/*
+ * Allocate a String object able to store nul-terminated string of
+ * length LEN.
+ */
+static String
+string_alloc(size_t len)
+{
+    struct string_reference *ref;
+    ref = malloc(string_reference_size(len));
+    if (ref) {
+	ref->refcnt = 1;
+	ref->str[0] = 0;
+    }
+    return ref;
+}
+
+/*
+ * Allocate a String object and initialize it with the first LEN bytes from
+ * the string STR.  Terminate allocated string with \0.
+ */
+static String
+string_init(char const *str, size_t len)
+{
+    String ref = string_alloc(len);
+    if (ref) {
+	memcpy(ref->str, str, len);
+	ref->str[len] = 0;
+    }
+    return ref;
+}
+
+/*
+ * Allocate a String object and initialize it to characters from S
+ * (terminating \0 included).
+ */
+static String
+string_copy(char const *s)
+{
+    if (!s)
+	return NULL;
+    return string_init(s, strlen(s));
+}
+
+/*
+ * Decrement reference counter of S.  Free the object if the counter is 0.
+ */
+void
+string_free(String s)
+{
+    if (s) {
+	if (--s->refcnt == 0)
+	    free(s);
+    }
+}
+
 char const *
 env_get(char *name, char **env)
 {
@@ -818,9 +902,9 @@ cronjob_alloc(struct cronjob_options const *opt,
 	      char const *command, struct micron_environ *env)
 {
     struct cronjob *job;
-    char *tag = (opt && opt->syslog_facility && opt->syslog_tag)
-	         ? opt->syslog_tag : NULL;
-    char *mailto = opt ? opt->mailto : NULL;
+    char const *tag = (opt && opt->syslog_facility)
+	               ? string_value(opt->syslog_tag) : NULL;
+    char const *mailto = opt ? string_value(opt->mailto) : NULL;
     size_t size = sizeof(*job) + strlen(command) + 1 +
 	            (tag ? strlen(tag) + 1 : 0) +
 	            (mailto ? strlen(mailto) + 1 : 0);
@@ -1298,16 +1382,9 @@ cronjob_options_ref(struct cronjob_options **popt)
 	    return -1;
 	}
 	*opt = **popt;
-	if (opt->syslog_tag) {
-	    opt->syslog_tag = strdup(opt->syslog_tag);
-	    if (!opt->syslog_tag) {
-		micron_log(LOG_ERR, "out of memory");
-		free(opt);
-		return -1;
-	    }
-	}
-
 	opt->perjob = 1;
+	string_ref(opt->mailto);
+	string_ref(opt->syslog_tag);
 	opt->prev = *popt;
 	*popt = opt;
     }
@@ -1318,9 +1395,10 @@ void
 cronjob_options_unref(struct cronjob_options **popt)
 {
     struct cronjob_options *opt = *popt;
+    string_free(opt->mailto);
+    string_free(opt->syslog_tag);
     if (opt->perjob) {
 	*popt = opt->prev;
-	free(opt->syslog_tag);
 	free(opt);
     }
 }
@@ -1357,12 +1435,12 @@ set_syslog_facility(char const *val, struct cronjob_options *opt,
 static int
 set_syslog_tag(char const *val, struct cronjob_options *opt, char **errmsg)
 {
-    free(opt->syslog_tag);
+    string_free(opt->syslog_tag);
     if (val) {
 	/* Set */
-	free(opt->mailto);
+	string_free(opt->mailto);
 	opt->mailto = NULL;
-	opt->syslog_tag = strdup(val);
+	opt->syslog_tag = string_copy(val);
 	if (!opt->syslog_tag) {
 	    *errmsg = "out of memory";
 	    return 1;
@@ -1377,19 +1455,21 @@ set_syslog_tag(char const *val, struct cronjob_options *opt, char **errmsg)
 static int
 set_builtin_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
 {
-    free(opt->mailto);
+    string_free(opt->mailto);
     if (val) {
 	/* Set */
 	opt->syslog_facility = 0;
-	free(opt->syslog_tag);
+	string_free(opt->syslog_tag);
 	opt->syslog_tag = NULL;
-	opt->mailto = strdup(val);
+	opt->mailto = string_copy(val);
 	if (!opt->mailto) {
 	    *errmsg = "out of memory";
 	    return 1;
 	}
-    } else
+    } else {
+	/* Unset */
 	opt->mailto = NULL;
+    }
     return 0;
 }
 
@@ -1403,11 +1483,11 @@ set_builtin_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
 static int
 set_env_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
 {
-    free(opt->mailto);
+    string_free(opt->mailto);
     opt->mailto = NULL;
     if (val) {
 	opt->syslog_facility = 0;
-	free(opt->syslog_tag);
+	string_free(opt->syslog_tag);
 	opt->syslog_tag = NULL;
     }
     return 0;
@@ -1871,22 +1951,22 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	}
 
 	if (opt->syslog_facility && !opt->syslog_tag) {
-	    char *tag;
 	    int cmdlen = strcspn(p, " \t");
 	    size_t len = strlen(cp->crongroup->dirname) +
 		         cmdlen +
 		         filename_len + 80;
 	    
 	    cronjob_options_ref(&opt);
-	    tag = malloc(len);
-	    if (!tag) {
+	    opt->syslog_tag = string_alloc(len);
+	    if (!opt->syslog_tag) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: can't allocate syslog tag",
 			   ARGCRONTAB(cgrp, filename), line);
 		goto next;
 	    } else {
-		snprintf(tag, len, "%s/%s:%u(%*.*s)", cp->crongroup->dirname,
+		//FIXME
+		snprintf(opt->syslog_tag->str, len,
+			 "%s/%s:%u(%*.*s)", cp->crongroup->dirname,
 			 filename, line, cmdlen, cmdlen, p);
-		opt->syslog_tag = tag;
 	    }
 	}
 	

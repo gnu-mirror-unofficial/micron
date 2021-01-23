@@ -33,8 +33,8 @@ struct cronjob_options {
     int dsem;
     unsigned maxinstances;
     int syslog_facility;
-    char *syslog_tag;
-    char *mailto;
+    String syslog_tag;
+    String mailto;
     struct cronjob_options *prev;
 };
 

@@ -45,5 +45,12 @@ void version(void);
 int patmatch(char const **patterns, const char *name);
 int is_ignored_file_name(char const *name);
 extern char const *ignored_file_patterns[];
+
+struct string_reference {
+    int refcnt;
+    char str[1];
+};
+typedef struct string_reference *String;
+
 
 
