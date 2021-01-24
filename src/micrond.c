@@ -1184,7 +1184,6 @@ static void
 pwdbuf_free(void *f)
 {
     struct pwdbuf *sb = f;
-    printf("FREE\n");//FIXME
     free(sb->buf);
     free(sb);
 }
