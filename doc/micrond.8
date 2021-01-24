@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH MICROND 8 "January 18, 2021" "MICROND" "System Manager's Manual"
+.TH MICROND 8 "January 24, 2021" "MICROND" "System Manager's Manual"
 .SH NAME
 micrond \- a minimal cron implementation
 .SH SYNOPSIS
@@ -23,7 +23,8 @@ micrond \- a minimal cron implementation
  [\fB\-l \fIPRI\fR]\
  [\fB\-m \fIMAILER\fR]\
  [\fB\-o \fIOPTIONS\fR]\
- [\fB\-p \fIDEV\fR]
+ [\fB\-p \fIDEV\fR]\
+ [\fB\-t \fISECONDS\fR]
 .SH DESCRIPTION
 Micrond executes commands periodically as directed by one or more
 \fIcrontabs\fR.  Each crontab is a plain text file, where each
@@ -211,6 +212,15 @@ option, described below.
 Log output from cronjobs to syslog.  By default, the \fBcron\fR
 facility is used.  Use the \fB\-o syslog_facility=\fIF\fR option to
 change it to facility \fIF\fR.
+.TP
+\fB\-t\fR \fIN\fR
+Before exiting, \fBmicrond\fR checks if some of the cronjobs are still
+running.  If so, it sends them the \fBSIGTERM\fR signal and waits
+\fIN\fR seconds for them to terminate.  The cronjobs that fail to exit
+within that amount of time are terminated forcibly by sending them the
+\fBSIGKILL\fR signal.
+.br
+The default timeout is 60 seconds.
 .TP
 .B \-v
 Print program version, licensing information and exit.

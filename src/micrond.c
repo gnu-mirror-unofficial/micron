@@ -21,6 +21,7 @@
 #include <syslog.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -125,7 +126,9 @@ int no_safety_checking;
 char *mailer_command = "/usr/sbin/sendmail -oi -t";
 int log_level = LOG_INFO;
 mode_t saved_umask;
-
+/* Time to wait for all cronjobs to terminate before stopping micrond. */
+unsigned micron_termination_timeout = 60;
+    
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
 static struct cronjob_options micron_options = {
@@ -140,7 +143,8 @@ static int crongroup_init(struct crongroup *cgrp);
 int crongroup_parse(struct crongroup *cgrp, int ifmod);
 void crongroup_forget_crontabs(struct crongroup *cgrp);
 
-void *cron_thr_main(void *);
+static void *cron_thr_main(void *);
+static void stop_thr_main(pthread_t tid);
 
 void
 stderr_log(int prio, char const *fmt, ...)
@@ -170,6 +174,25 @@ int fatal_signals[] = {
 static void
 signull(int sig)
 {
+}
+
+/* Restore default signal handlers */
+void
+restore_default_signals(void)
+{
+    int i;
+    struct sigaction act;
+    sigset_t sigs;
+    
+    act.sa_flags = 0;
+    sigemptyset(&act.sa_mask);
+    act.sa_handler = SIG_DFL;
+    for (i = 0; fatal_signals[i]; i++) {
+	sigaction(fatal_signals[i], &act, NULL);
+    }
+
+    sigfillset(&sigs);
+    pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 }
 
 static void
@@ -245,6 +268,9 @@ usage(void)
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
     printf("    -S              log to syslog even if running in foreground\n");
     printf("    -s              log output from cronjobs to syslog\n");
+    printf("    -t SECONDS      time to wait for the cronjobs to terminate after\n"
+	   "                    sending them the SIGTERM signal before stopping\n"
+	   "                    micrond\n");
     printf("\n");
     printf("    -h              print this help text\n");
     printf("    -v              print program version and exit\n");
@@ -257,6 +283,14 @@ usage(void)
     printf("\n");
 }
 
+void
+default_stop_thread(pthread_t tid)
+{
+    void *res;
+    pthread_cancel(tid);
+    pthread_join(tid, &res);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -264,12 +298,54 @@ main(int argc, char **argv)
     int i;
     struct sigaction act;
     sigset_t sigs;
-    pthread_t tid;
     int log_to_syslog = 0;
+
+    struct thread_info {
+	pthread_t tid;              /* Thread handle. Gets filled when the
+				       thread is created. */
+	/* Each of the function pointers below can be NULL. */
+	void (*init)(void);         /* Initialization funtion.  Called at
+				       startup before creating the thread. */
+	void *(*start)(void *ptr);  /* Thread start routine. */
+	void (*stop) (pthread_t);   /* Function to stop the thread */
+    };
+
+    /*
+     * Threads are started in the order they are listed in the thread_info
+     * array and terminated in the reverse order.
+     */
+    static struct thread_info thread_info[] = {
+	// Program cleaner
+	{
+	    .start = cron_thr_cleaner,
+	    .stop = stop_thr_cleaner
+	},
+	// Program runner 
+	{
+	    .start = cron_thr_runner,
+	    .stop = default_stop_thread
+	},
+	// Scheduler
+	{
+	    .start = cron_thr_main,
+	    .stop = stop_thr_main
+	},
+	// Crontab watcher
+	{
+#ifdef WITH_INOTIFY
+	    .start = cron_thr_watcher,
+	    .stop = default_stop_thread
+#else
+	    .init = crontab_scanner_schedule
+#endif
+	}
+    };
+    static int nthr = sizeof(thread_info) / sizeof(thread_info[0]);
+
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:fNl:m:o:p:Ssv")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:p:Sst:v")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -315,6 +391,19 @@ main(int argc, char **argv)
 	    micron_options.syslog_facility = LOG_CRON;
 	    break;
 
+	case 't': {
+	    unsigned long n;
+	    char *endp;
+	    
+	    n = strtoul(optarg, &endp, 10);
+	    if (*endp || (n == ULONG_MAX && errno == ERANGE) || n <= 0) {
+		micron_logger(LOG_CRIT, "not a valid timeout value: %s", optarg);
+		exit(EXIT_USAGE);
+	    }
+	    micron_termination_timeout = n;
+	    break;
+	}
+	    
 	case 'v':
 	    version();
 	    exit(EXIT_OK);
@@ -346,7 +435,18 @@ main(int argc, char **argv)
 	LIST_HEAD_INSERT_LAST(&crongroup_head, &crongroups[i], list);
     }
 
-    if (!foreground) {
+    if (foreground) {
+	/*
+	 * Make sure stdin is disconnected from the terminal.  This setting
+	 * will be inherited by all forked processes.  The remaining two
+	 * standard descriptors will be set for each child individually.
+	 */
+	close(0);
+	if (open("/dev/null", O_RDONLY) == -1) {
+	    micron_log(LOG_CRIT, "can't open /dev/null: %s", strerror(errno));
+	    exit(EXIT_FATAL);
+	}
+    } else {
 	if (daemon(0, 0)) {
 	    micron_log(LOG_CRIT, "daemon failed: %s", strerror(errno));
 	    exit(EXIT_FATAL);
@@ -381,19 +481,14 @@ main(int argc, char **argv)
     micron_log(LOG_NOTICE, "cron (%s) started", PACKAGE_STRING);
 
     /* Start worker threads */
-    // Program cleaner
-    pthread_create(&tid, NULL, cron_thr_cleaner, NULL);
-    // Program runner 
-    pthread_create(&tid, NULL, cron_thr_runner, NULL);
-    // Scheduler
-    pthread_create(&tid, NULL, cron_thr_main, NULL);
-    // Crontab watcher
-#ifdef WITH_INOTIFY
-    pthread_create(&tid, NULL, cron_thr_watcher, NULL);
-#else
-    crontab_scanner_schedule();
-#endif
-
+    for (i = 0; i < nthr; i++) {
+	if (thread_info[i].init)
+	    thread_info[i].init();
+	if (thread_info[i].start)
+	    pthread_create(&thread_info[i].tid, NULL,
+			   thread_info[i].start, NULL);
+    }
+    
     /* Unblock only the fatal signals */
     sigemptyset(&sigs);
     for (i = 0; fatal_signals[i]; i++) {
@@ -406,6 +501,12 @@ main(int argc, char **argv)
     micron_log(LOG_NOTICE, "cron shutting down on signal \"%s\"",
 	       strsignal(i));
 
+    /* Stop the threads in reverse order. */
+    for (i = nthr - 1; i >= 0; i--) {
+	if (thread_info[i].stop)
+	    thread_info[i].stop(thread_info[i].tid);
+    }
+    
     return EXIT_OK;
 }
 
@@ -1083,6 +1184,7 @@ static void
 pwdbuf_free(void *f)
 {
     struct pwdbuf *sb = f;
+    printf("FREE\n");//FIXME
     free(sb->buf);
     free(sb);
 }
@@ -2473,13 +2575,20 @@ crongroup_chattr(struct crongroup *cgrp)
     pthread_mutex_unlock(&cronjob_mutex);
 }
 
-void *
+static void
+cron_cleanup_main(void *unused)
+{
+    pthread_mutex_unlock(&cronjob_mutex);    
+}
+
+static void *
 cron_thr_main(void *ptr)
 {
     struct cronjob *job;
 
     pthread_mutex_lock(&cronjob_mutex);
-
+    pthread_cleanup_push(cron_cleanup_main, NULL);
+    
     micron_log(LOG_INFO, "running reboot jobs");
     while (!list_head_is_empty(&cronjob_head)) {
 	job = LIST_FIRST_ENTRY(&cronjob_head, job, list);
@@ -2525,5 +2634,17 @@ cron_thr_main(void *ptr)
 	}
 	cronjob_arm(job, 0);
     }
+    pthread_cleanup_pop(1);
 }
 
+static void
+stop_thr_main(pthread_t tid)
+{
+    pthread_mutex_lock(&cronjob_mutex);
+    while (!list_head_is_empty(&crontabs)) {
+	struct crontab *cp;
+	crontab_forget(LIST_FIRST_ENTRY(&crontabs,cp,list));
+    }
+    pthread_mutex_unlock(&cronjob_mutex);
+    default_stop_thread(tid);
+}

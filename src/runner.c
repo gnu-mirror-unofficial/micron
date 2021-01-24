@@ -73,6 +73,7 @@ struct proctab {
 static struct list_head proctab_head = LIST_HEAD_INITIALIZER(proctab_head);
 static pthread_mutex_t proctab_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t proctab_cond = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t proctab_rm_cond = PTHREAD_COND_INITIALIZER;
 
 static struct proctab *
 proctab_alloc(void)
@@ -123,6 +124,7 @@ proctab_remove_safe(struct proctab *pt)
 {
     pthread_mutex_lock(&proctab_mutex);
     proctab_remove(pt);
+    pthread_cond_broadcast(&proctab_rm_cond);
     pthread_mutex_unlock(&proctab_mutex);
 }
 
@@ -201,6 +203,7 @@ runner_start(struct cronjob *job)
 		       "is still running (PID %lu)",
 		       job->command,
 		       (unsigned long)pt->pid);
+	    env_free(env);
 	    cronjob_unref(job);
 	    return;
 	} else if (job->maxinstances == job->runcnt) {
@@ -208,6 +211,7 @@ runner_start(struct cronjob *job)
 		       "won't start \"%s\": %u instances already running",
 		       job->command,
 		       job->runcnt);
+	    env_free(env);
 	    cronjob_unref(job);
 	    return;
 	} else 	    
@@ -264,9 +268,12 @@ runner_start(struct cronjob *job)
 	int i;
 	char const *shell;
 
+	/* Restore default signal handlers */
+	restore_default_signals();
+	
 	/* Set the proper umask */
 	umask(saved_umask);
-	
+
 	/* Redirect stdout and stderr to file */
 	dup2(fd, 1);
 	dup2(1, 2);
@@ -390,10 +397,17 @@ mailer_start(struct proctab *pt, const char *mailto)
     return 0;
 }
 
+static void
+cron_cleanup_runner(void *unused)
+{
+    pthread_mutex_unlock(&runner_mutex);
+}
+
 void *
 cron_thr_runner(void *ptr)
 {
     pthread_mutex_lock(&runner_mutex);
+    pthread_cleanup_push(cron_cleanup_runner, NULL);
     while (1) {
 	struct cronjob *job;
 
@@ -401,6 +415,8 @@ cron_thr_runner(void *ptr)
 	while ((job = runner_dequeue()) != NULL)
 	    runner_start(job);
     }
+    pthread_cleanup_pop(0);
+    pthread_mutex_unlock(&runner_mutex);
     return NULL;
 }
 
@@ -472,6 +488,47 @@ cron_thr_cleaner(void *ptr)
     }
     return NULL;
 }
+
+void
+stop_thr_cleaner(pthread_t tid)
+{
+    struct proctab *pt;
+    struct timespec ts;
+
+    /* Send all jobs the TERM signal */
+    pthread_mutex_lock(&proctab_mutex);
+    if (!list_head_is_empty(&proctab_head)) {
+	micron_log(LOG_DEBUG, "sending all cronobs the SIGTERM signal");
+	LIST_FOREACH(pt, &proctab_head, link) {
+	    if (pt->pid > 0)
+		kill(pt->pid, SIGTERM);
+	}
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += micron_termination_timeout;
+    
+	while (!list_head_is_empty(&proctab_head))
+	    if (pthread_cond_timedwait(&proctab_rm_cond, &proctab_mutex, &ts) != 0)
+		break;
+
+	/* Forcibly terminate remaining jobs */
+	if (!list_head_is_empty(&proctab_head)) {
+	    micron_log(LOG_DEBUG, "sending all cronobs the SIGKILL signal");
+
+	    LIST_FOREACH(pt, &proctab_head, link) {
+		if (pt->pid > 0)
+		    kill(pt->pid, SIGKILL);
+	    }
+	}
+
+	while (!list_head_is_empty(&proctab_head))
+	    proctab_remove(LIST_FIRST_ENTRY(&proctab_head, pt, link));
+    }
+    pthread_mutex_unlock(&proctab_mutex);
+    
+    default_stop_thread(tid);
+}
+
 
 static pthread_mutex_t logger_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct list_head logger_queue = LIST_HEAD_INITIALIZER(logger_queue);

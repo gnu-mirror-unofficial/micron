@@ -636,6 +636,16 @@ Log output from cronjobs to syslog.  By default, the @samp{cron}
 facility is used.  Use the @option{-o syslog_facility=@var{f}} option
 to change it to facility @var{f}.
 
+@opindex -t
+@item -t @var{n}
+Before exiting, @command{micrond} checks if some of the cronjobs are
+still running.  If so, it sends them the @code{SIGTERM} signal and
+waits @var{n} seconds for them to terminate.  The cronjobs that fail
+to exit within that amount of time are terminated forcibly by sending
+them the @code{SIGKILL} signal.
+
+The default timeout is 60 seconds.
+
 @opindex -v
 @item -v
 Print program version, licensing information and exit.

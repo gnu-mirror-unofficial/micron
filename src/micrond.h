@@ -176,6 +176,7 @@ extern struct list_head crongroup_head;
 extern char *mailer_command;
 extern int log_level;
 extern mode_t saved_umask;
+extern unsigned micron_termination_timeout;
 
 /* Return values from crontab safety checking and parsing functions */
 enum {
@@ -217,6 +218,9 @@ void usercrongroup_delete(struct crongroup *host, char const *name);
 
 void *cron_thr_runner(void *ptr);
 void *cron_thr_cleaner(void *ptr);
+void stop_thr_cleaner(pthread_t tid);
+void default_stop_thread(pthread_t tid);
+void restore_default_signals(void);
 
 void runner_enqueue(struct cronjob *job);
 

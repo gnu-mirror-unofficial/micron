@@ -23,6 +23,7 @@
 #include <poll.h>
 #include <string.h>
 #include <syslog.h>
+#include <pthread.h>
 #include "micrond.h"
 
 static int ifd = -1;
@@ -203,30 +204,37 @@ watcher_run(void)
     return 0;
 }
 
+static void
+cron_cleanup_watcher(void *unused)
+{
+    close(ifd);
+}
+
 void *
 cron_thr_watcher(void *ptr)
 {
     struct pollfd pfd;
     
     ifd = watcher_setup();
-    if (ifd == -1)
-	return NULL;
+    if (ifd != -1) {
+	pthread_cleanup_push(cron_cleanup_watcher, NULL);
 
-    pfd.fd = ifd;
-    pfd.events = POLLIN;
+	pfd.fd = ifd;
+	pfd.events = POLLIN;
 
-    while (1) {
-	int n = poll(&pfd, 1, -1);
-	if (n == -1) {
-	    micron_log(LOG_ERR, "poll: %s", strerror(errno));
-	    break;
+	while (1) {
+	    int n = poll(&pfd, 1, -1);
+	    if (n == -1) {
+		micron_log(LOG_ERR, "poll: %s", strerror(errno));
+		break;
+	    }
+	    if (n == 1) {
+		if (pfd.revents & POLLIN)
+		    watcher_run();
+	    }
 	}
-	if (n == 1) {
-	    if (pfd.revents & POLLIN)
-		watcher_run();
-	}
+	pthread_cleanup_pop(1);
     }
-    close(ifd);
     /* Fall back to the traditional scanner */
     crontab_scanner_schedule();
     return NULL;
