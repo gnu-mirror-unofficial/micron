@@ -532,7 +532,7 @@ stop_thr_cleaner(pthread_t tid)
 
 static pthread_mutex_t logger_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct list_head logger_queue = LIST_HEAD_INITIALIZER(logger_queue);
-static int logger_pipe[2];
+static int logger_pipe[2] = { -1, -1 };
 static pthread_t logger_tid = 0;
 
 struct logbuf {
@@ -580,12 +580,6 @@ cron_thr_logger(void *arg)
     fd_set logger_set;
     int logger_max_fd;
 
-    if (pipe(logger_pipe)) {
-	micron_log(LOG_ERR, "can't create control pipe: %s",
-		   strerror(errno));
-	/* FIXME: Not the best solution, perhaps */
-	exit(EXIT_FATAL);
-    }
     while (1) {
 	struct logbuf *bp, *prev;
 	fd_set rds;
@@ -676,8 +670,6 @@ cron_thr_logger(void *arg)
 	pthread_mutex_unlock(&logger_mutex);
     }
     micron_log(LOG_NOTICE, "logger thread terminating");
-    close(logger_pipe[0]);
-    close(logger_pipe[1]);
     logger_tid = 0;
     return NULL;
 }
@@ -687,6 +679,12 @@ logger_enqueue(struct proctab *pt)
 {
     struct logbuf *bp;
 
+    if (logger_pipe[0] == -1 && pipe(logger_pipe)) {
+	micron_log(LOG_ERR, "can't create control pipe: %s",
+		   strerror(errno));
+	/* FIXME: Not the best solution, perhaps */
+	exit(EXIT_FATAL);
+    }
     if (!logger_tid) {
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);

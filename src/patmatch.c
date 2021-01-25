@@ -6,10 +6,12 @@
 int
 patmatch(char const **patterns, const char *name)
 {
-    int i;
-    for (i = 0; patterns[i]; i++)
-	if (fnmatch(patterns[i], name, FNM_PATHNAME|FNM_PERIOD) == 0)
-	    return 1;
+    if (patterns) {
+	int i;
+	for (i = 0; patterns[i]; i++)
+	    if (fnmatch(patterns[i], name, FNM_PATHNAME|FNM_PERIOD) == 0)
+		return 1;
+    }
     return 0;
 }
 
