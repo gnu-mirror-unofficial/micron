@@ -19,6 +19,7 @@ micrond_SOURCES=\
  micrond.c\
  micrond.h\
  runner.c
+
 if COND_INOTIFY
  micrond_SOURCES += watcher.c
 endif
@@ -28,6 +29,7 @@ crontab_SOURCES=crontab.c
 
 noinst_LIBRARIES = libmicron.a
 libmicron_a_SOURCES =\
+ closefds.c\
  micron.c\
  micron.h\
  micron_log.c\

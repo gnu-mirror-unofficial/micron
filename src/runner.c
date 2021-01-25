@@ -265,7 +265,6 @@ runner_start(struct cronjob *job)
     }
 
     if (pid == 0) {
-	int i;
 	char const *shell;
 
 	/* Restore default signal handlers */
@@ -288,10 +287,8 @@ runner_start(struct cronjob *job)
 	}
 
 	/* Close the rest of descriptors */
-	for (i = sysconf(_SC_OPEN_MAX); i > 2; i--) {
-	    close(i);
-	}
-
+	close_fds(3);
+	
 	shell = env_get(ENV_SHELL, env);
 	execle(shell, shell, "-c", job->command, NULL, env);
 	fprintf(stderr, "execle failed: shell=%s, command=%s\n",
@@ -355,9 +352,7 @@ mailer_start(struct proctab *pt, const char *mailto)
 	    job_setprivs(pt->job, pt->env);
 
 	    dup2(p[0], 0);
-	    for (i = sysconf(_SC_OPEN_MAX); i > 0; i--) {
-		close(i);
-	    }
+	    close_fds(1);
 	    open("/dev/null", O_WRONLY);
 	    dup(1);
 	    execlp("/bin/sh", "sh", "-c", mailer_command, NULL);

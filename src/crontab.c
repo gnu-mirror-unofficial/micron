@@ -601,17 +601,13 @@ command_edit(int argc, char **argv)
 	    goto finish;
 	}
 	if (pid == 0) {
-	    int i;
-
 	    if (fchdir(tempdirfd)) {
 		terror("failed to change to %s/%s: %s", tempdir, template,
 		       strerror(errno));
 		_exit(127);
 	    }
 
-	    for (i = sysconf(_SC_OPEN_MAX); i > 2; i--) {
-		close(i);
-	    }
+	    close_fds(3);
 	    
 	    execlp("/bin/sh", "sh", "-c", editor_command, NULL);
 	    _exit(127);

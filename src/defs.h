@@ -51,6 +51,8 @@ struct string_reference {
     char str[1];
 };
 typedef struct string_reference *String;
+
+void close_fds(int minfd);
 
 
 
