@@ -42,6 +42,7 @@ struct cronjob {
     int type;                  /* Type of this job */
     struct micronexp schedule; /* Time schedule expression */
     char *command;             /* Command to be run */
+    char *input;               /* Standard input */
     uid_t uid;                 /* Run as this UID */ 
     gid_t gid;                 /* ... and GID */
     unsigned maxinstances;     /* Allow that many instances to run

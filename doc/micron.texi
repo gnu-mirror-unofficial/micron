@@ -303,7 +303,35 @@ This field is absent in user personal crontabs, since these are always
 run on behalf of the user that owns them,
 
 The rest of line is taken as a shell command to be run when the time
-matches the schedule.  Before running the command, @command{micrond}
+matches the schedule.  The percent sign in the command line is
+special: the first occurrence of unescaped and unquoted @samp{%}
+delimits the command line proper and the text that will be piped to
+its standard input.  Any unescaped occurrences of @samp{%} to the
+right of it will be replaced with newlines.  To use a literal percent
+sign in the job command line, either precede it with a backslash or
+quote it using single or double quotes.
+
+For example, the following command line:
+
+@example
+mail hostmaster%Hello,%%This is a daily notification.%--%Regards from cron.%
+@end example
+
+@noindent
+will cause @command{mirond} to start the @command{mail} command and
+to supply the following text to its standard input:
+
+@example
+@group
+Hello,
+
+This is a daily notification.
+--
+Regards from cron.
+@end group
+@end example
+
+Before running the command, @command{micrond}
 changes the directory to the home directory of the user on whose
 behalf the command is run (as defined by the @env{HOME} environment
 variable, @pxref{HOME}), modifies the environment as defined by variable

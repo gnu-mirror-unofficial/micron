@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 5 "January 18, 2021" "CRONTAB" "File Formats Manual"
+.TH CRONTAB 5 "January 25, 2021" "CRONTAB" "File Formats Manual"
 .SH NAME
 crontab \- tables for driving micrond
 .SH DESCRIPTION
@@ -173,6 +173,13 @@ changes the directory to the home directory of the user for whom the
 command is run, modifies the environment as defined by variable
 settings (see below) and runs the command using the shell defined by
 the \fBSHELL\fR variable (\fB/bin/sh\fR by default).
+.PP
+The standard input to be piped to the job can be supplied after the
+command, by separating it from the command with a percent sign.  To
+use a literal percent signs in the command, escape it with a backslash
+or quote it (both single and double quotes will do).  Any occurrence
+of unescaped percent sign in the input line will be replaced with a
+newline.
 .SS Variable settings
 Variable settings modify execution environment for subsequent cron
 commands.  Some variables are internal to \fBmicrond\fR and modify

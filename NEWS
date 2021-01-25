@@ -1,4 +1,4 @@
-micron -- history of user-visible changes. 2021-01-24
+micron -- history of user-visible changes. 2021-01-25
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
@@ -14,6 +14,19 @@ Version 0.9.90 (git)
 * New micrond option: -S
 
 * New micrond option: -t timeout
+
+* Vixie-style input specification
+
+A percent sign in the job command line terminates the command.  Any
+material to the right of it is taken as the standard input to the
+command.  Occurrences of percent sign in the input text are replaced
+with the newlines.
+
+To use literal percent sign in the command, prefix it with a
+backslash or place it inside a pair of single or double quotes.
+
+To use literal percent sign in the input text, prefix it with a
+backslash.
 
 * Fix micrond.8 manual page
 

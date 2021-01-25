@@ -175,6 +175,60 @@ job_setprivs(struct cronjob *job, char **env)
 
 static void logger_enqueue(struct proctab *pt);
 
+struct cronjob_input {
+    struct cronjob *job;
+    int fd;
+};
+
+static void
+cronjob_input_free(struct cronjob_input *cin)
+{
+    cronjob_unref(cin->job);
+    close(cin->fd);
+    free(cin);
+}
+
+/*
+ * Special thread for piping the string to the job's standard input.
+ * This handles Vixie-style input specification, e.g.:
+ *
+ *    mail gray%Hello,%%This is a test message.%
+ *
+ */
+
+void
+pipe_input_cleanup(void *ptr)
+{
+    cronjob_input_free(ptr);
+//    micron_log(LOG_DEBUG, "pipe_input_cleanup: finished");
+}
+
+void *
+pipe_input_thread(void *ptr)
+{
+    struct cronjob_input *cin = ptr;
+    char *p = cin->job->input;
+    size_t len = strlen(p);
+
+    pthread_cleanup_push(pipe_input_cleanup, cin);
+    while (len > 0) {
+	ssize_t n = write(cin->fd, p, len);
+	if (n == -1) {
+	    micron_log(LOG_ERR, "%s: write error: %s",
+		       cin->job->command, strerror(errno));
+	    break;
+	}
+	if (n == 0) {
+	    micron_log(LOG_ERR, "%s: pipe full", cin->job->command);
+	    break;
+	}
+	p += n;
+	len -= n;
+    }
+    pthread_cleanup_pop(1);
+    return NULL;
+}
+
 static void
 runner_start(struct cronjob *job)
 {
@@ -183,7 +237,9 @@ runner_start(struct cronjob *job)
     int fd;
     struct proctab *pt;
     int p[2];
-
+    int in = -1;
+    pthread_t input_tid;
+    
     micron_log(LOG_DEBUG, "running \"%s\" on behalf of %lu.%lu",
 	       job->command, (unsigned long)job->uid,
 	       (unsigned long)job->gid);
@@ -253,6 +309,38 @@ runner_start(struct cronjob *job)
 	free(template);
     }
 
+    if (job->input) {
+	int inpipe[2];
+	pthread_attr_t attr;
+	struct cronjob_input *cin;
+
+	if (pipe(inpipe)) {
+	    micron_log(LOG_ERR, "pipe: %s", strerror(errno));
+	    goto err;
+	}
+
+	if ((cin = malloc(sizeof(*cin))) == NULL) {
+	    micron_log(LOG_ERR, "out of memory");
+	err:
+	    env_free(env);
+	    close(inpipe[0]);
+	    close(inpipe[1]);
+	    close(p[0]);
+	    close(p[1]);
+	    return;	   
+	}
+	
+	cin->job = job;
+	cronjob_ref(job);
+	cin->fd = inpipe[1];
+	
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_create(&input_tid, &attr, pipe_input_thread, cin);
+	pthread_attr_destroy(&attr);
+	in = inpipe[0];
+    }
+    
     pthread_mutex_lock(&proctab_mutex);
 
     pid = fork();
@@ -260,6 +348,8 @@ runner_start(struct cronjob *job)
 	micron_log(LOG_ERR, "fork: %s", strerror(errno));
 	env_free(env);
 	close(fd);
+	if (in != -1)
+	    pthread_cancel(input_tid);
 	pthread_mutex_unlock(&proctab_mutex);
 	return;
     }
@@ -273,6 +363,10 @@ runner_start(struct cronjob *job)
 	/* Set the proper umask */
 	umask(saved_umask);
 
+	/* Provide standard input */
+	if (in != -1)
+	    dup2(in, 0);
+	
 	/* Redirect stdout and stderr to file */
 	dup2(fd, 1);
 	dup2(1, 2);

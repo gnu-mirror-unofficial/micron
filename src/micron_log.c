@@ -44,7 +44,8 @@ char *micron_fallback_file = "/tmp/micron_logger.log";
    and port number or service name. */
 char *micron_log_dev = MICRON_LOG_DEV;
 /* Log tag */
-char *micron_log_tag = "micron_logger";
+char *micron_log_tag;
+#define DEFAULT_MICRON_LOG_TAG "micron_logger"
 /* Log facility */
 int micron_log_facility = LOG_CRON;
 /* Maximum capacity of the log message queue */
@@ -119,13 +120,14 @@ static void *thr_syslog(void *ptr);
 static inline void
 log_open(const char *ident, int facility)
 {
-    if (log_tid)
-	return;
-    if (ident)
-	micron_log_tag = strdup(ident);
-    if (facility >= 0)
-	micron_log_facility = facility;
-    pthread_create(&log_tid, NULL, thr_syslog, micron_log_dev);
+    pthread_mutex_lock(&log_queue_mutex);
+    if (!log_tid) {
+	micron_log_tag = strdup(ident ? ident : DEFAULT_MICRON_LOG_TAG);
+	if (facility >= 0)
+	    micron_log_facility = facility;
+	pthread_create(&log_tid, NULL, thr_syslog, micron_log_dev);
+    }
+    pthread_mutex_unlock(&log_queue_mutex);
 }
 
 /* The micron_log_open call does not try to mimic the openlog function.
@@ -145,11 +147,14 @@ void
 micron_log_close(void)
 {
    pthread_mutex_lock(&log_queue_mutex);
-   log_stop = 1;
-   pthread_cond_broadcast(&log_queue_cond);
-   pthread_mutex_unlock(&log_queue_mutex);
-   pthread_join(log_tid, NULL);
-   log_tid = 0;
+   if (log_tid) {
+       log_stop = 1;
+       pthread_cond_broadcast(&log_queue_cond);
+       pthread_mutex_unlock(&log_queue_mutex);
+       pthread_join(log_tid, NULL);
+       log_tid = 0;
+   } else
+       pthread_mutex_unlock(&log_queue_mutex);
 }
 
 /* Upper level logger API */
@@ -476,6 +481,8 @@ thr_syslog(void *ptr)
 	}
     }
     pthread_mutex_unlock(&log_queue_mutex);
+    free(micron_log_tag);
+    micron_log_tag = NULL;
     close(log_fd);
     log_fd = -1;
     log_stop = 0;

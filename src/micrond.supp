@@ -63,3 +63,13 @@
    fun:crongroups_parse_all
    fun:main
 }
+{
+   Logger thread is never terminated
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   ...
+   fun:pthread_create*
+   fun:logger_enqueue
+   ...
+}

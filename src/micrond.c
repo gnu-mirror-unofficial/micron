@@ -506,6 +506,8 @@ main(int argc, char **argv)
 	if (thread_info[i].stop)
 	    thread_info[i].stop(thread_info[i].tid);
     }
+
+    micron_log_close();
     
     return EXIT_OK;
 }
@@ -995,6 +997,53 @@ cronjob_head_remove(int fileid)
     }
 }
 
+static char *
+find_percent(char *p)
+{
+    enum { S_INIT, S_QUOTE, S_DQUOTE } state = S_INIT;
+
+    while (*p) {
+	switch (state) {
+	case S_INIT:
+	    switch (*p) {
+	    case '\\':
+		p++;
+		if (*p == 0)
+		    return NULL;
+		break;
+	    case '\'':
+		state = S_QUOTE;
+		break;
+	    case '"':
+		state = S_DQUOTE;
+		break;
+	    case '%':
+		return p;
+	    }
+	    break;
+
+	case S_QUOTE:
+	    if (*p == '\'')
+		state = S_INIT;
+	    break;
+
+	case S_DQUOTE:
+	    switch (*p) {
+	    case '\\':
+		p++;
+		if (*p == 0)
+		    return NULL;
+		break;
+	    case '"':
+		state = S_INIT;
+	    }
+	    break;
+	}
+	p++;
+    }
+    return NULL;
+}
+
 static struct cronjob *
 cronjob_alloc(struct cronjob_options const *opt,
 	      int fileid, int type,
@@ -1026,7 +1075,33 @@ cronjob_alloc(struct cronjob_options const *opt,
 	p = (char*)(job + 1);
 	job->command = p;
 	strcpy(job->command, command);
-	p += + strlen(job->command) + 1;
+
+	if ((p = find_percent(job->command)) != NULL) {
+	    char *q;
+	    *p++ = 0;
+	    job->input = q = p;
+	    /*
+	     * Translate unescaped % to \n.
+	     * Strip off backslashes.
+	     */
+	    while (*q) {
+		if (*p == '%')
+		    *q = '\n';
+		else {
+		    if (*p == '\\')
+			p++;
+		    if (q != p)
+			*q = *p;
+		}
+		p++;
+		q++;
+	    }
+	} else {
+	    job->input = NULL;
+	    p = job->command + strlen(job->command);
+	}
+	p++; /* skip past the terminating nul */
+	
 	if (tag) {
 	    job->syslog_tag = p;
 	    strcpy(job->syslog_tag, tag);
@@ -2219,6 +2294,7 @@ again:
 		   "can't change owner of directory %s: %s",
 		   cgrp->dirname,
 		   "no such group");
+	    return CRONTAB_FAILURE;
     }
 
     if (st.st_uid != pwd->pw_uid || st.st_gid != grp->gr_gid) {
