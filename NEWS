@@ -1,4 +1,4 @@
-micron -- history of user-visible changes. 2021-01-25
+micron -- history of user-visible changes. 2021-01-26
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
@@ -7,13 +7,17 @@ Version 0.9.90 (git)
 
 * Restore signal handlers in cronjobs
 
-* Make sure stdin is redirected from /dev/null in foreground
+* Improvemens in foreground mode
 
-* Terminate all running cronjobs before exiting.
+** Redirect /dev/null to stdin
 
-* New micrond option: -S
+This ensures that the cronjobs don't remain attached to the console.
 
-* New micrond option: -t timeout
+** New micrond option: -S
+
+This option instructs micrond to log its diagnostic messages to syslog
+even when running in foreground (using the -f option).  This is
+useful when starting micrond as a systemd service.
 
 * Vixie-style input specification
 
@@ -27,6 +31,19 @@ backslash or place it inside a pair of single or double quotes.
 
 To use literal percent sign in the input text, prefix it with a
 backslash.
+
+* Terminate all running cronjobs before exiting
+
+Before exiting, micrond checks if any of the commands it started are
+still running.  If so, it terminates them.  This is done in two steps:
+first, the SIGTERM is sent to all running jobs and they are given 60
+seconds to terminate (the timeout is configurable, see the -t option
+below).  Any job that is still running after this time is sent the
+SIGKILL signal.
+
+** New micrond option: -t timeout
+
+Sets the cronjob termination timeout.
 
 * Fix micrond.8 manual page
 
