@@ -2012,8 +2012,10 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 		    rc = copy_quoted(value, p + 1, *p);
 		else 
 		    rc = copy_unquoted(value, p);
-	    } else
+	    } else {
 		value = NULL;
+		rc = 0;
+	    }
 		
 	    if (rc) {
 		micron_log(LOG_ERR, PRsCRONTAB ":%u: syntax error",

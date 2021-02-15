@@ -1,7 +1,11 @@
-micron -- history of user-visible changes. 2021-02-03
+micron -- history of user-visible changes. 2021-02-15
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
+
+Version 1.1, 2021-02-15
+
+* Fix unsetting variables in crontabs
 
 Version 1.0, 2021-02-03
 

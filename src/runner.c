@@ -154,20 +154,20 @@ static void
 job_setprivs(struct cronjob *job, char **env)
 {
     if (setgid(job->gid)) {
-	fprintf(stderr, "setgid(%lu): %s",
+	fprintf(stderr, "setgid(%lu): %s\n",
 		(unsigned long)job->gid, strerror(errno));
 	_exit(127);
     }
 
     if (initgroups(env_get(ENV_LOGNAME, env), job->gid)) {
-	fprintf(stderr, "initgroups(%s,%lu): %s",
+	fprintf(stderr, "initgroups(%s,%lu): %s\n",
 		env_get(ENV_LOGNAME, env), (unsigned long)job->gid,
 		strerror(errno));
 	_exit(127);
     }
 
     if (setuid(job->uid)) {
-	fprintf(stderr, "setuid(%lu): %s",
+	fprintf(stderr, "setuid(%lu): %s\n",
 		(unsigned long)job->uid, strerror(errno));
 	_exit(127);
     }
