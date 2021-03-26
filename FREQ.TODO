@@ -1,0 +1,274 @@
+* Purpose
+
+Implement inter-job dependencies.  Each job can be assigned a unique
+identifier.  Other jobs can refer to that identifier, installing
+dependencies between cronjobs.  Three new built-in variables are
+proposed:
+
+** _JOB_ID
+
+  Assigns identifier to the cronjob.  Identifiers must be unique within
+  a crontab.  Internally a cronjob is identified by the tuple
+  (fileid,_JOB_ID), where fileid is the numeric crontab identifier
+  (struct cronjob).
+
+** _JOB_DEPENDENCY
+
+  Declares a dependency.  Argument is a valid cronjob identifier, optionally
+  followed by slash and interval specification:
+
+     JOBID[/INTERVAL]
+
+  or a comma-separated list of such constructs (introducing multiple
+  dependencies).
+
+  The job startup time is computed so that it satisfy both the crontab
+  expression and is at least INTERVAL seconds later than the startup
+  time of the last successfully terminated JOBID instance.  In case of
+  multiple dependencies, the startup time is computed relative to the
+  latest (start_time + INTERVAL) value.  If at least one of the
+  dependencies fails, the job is not scheduled.
+  
+  Missing INTERVAL stands for 0.
+
+  For a definition of successful termination, see _JOB_OK_EXIT below.
+
+  JOBID must refer to a cron job from the same crontab.
+
+  NOTE: INTERVAL specification and the function for converting it to the
+  equivalent number of seconds can be taken from mailfromd.
+
+  Example:
+
+     _JOB_DEPENDENCY=otherjob/30m
+
+  If multiple dependencies are specified (either as a comma-delimited list
+  of JOBID[/INTERVAL] specifications, or via multiple _JOB_DEPENDENCY
+  instances or both), the job will be started only if all dependency
+  jobs have terminated successfully.  A job terminates successfully if
+  its exit code is listed in the _JOB_OK_EXIT variable associated with
+  that job (see below).
+
+  If several multiple dependencies failed and all of them have associated 
+  interval specifications, the schedule time is computed using the minimal 
+  interval among specified.
+
+  If at least one of the failed dependencies was defined without
+  interval, the schedule time is computed as usual.
+
+** _JOB_FREQUENCY
+
+  Declares minimal time interval between two successive runs of the
+  cronjob.
+
+  Example:
+  
+  # run whenever it's between 2-4 am, and at least one day (1d)
+  # has elapsed since this job ran
+  _JOB_FREQUENCY = 1d
+  * 2-4 * * * date
+
+** _JOB_RETRY_INTERVAL
+
+  Defines the time interval after which to retry the job if its current
+  run failed.
+
+** _JOB_OK_EXIT
+
+  Declares job exit codes that indicate successful termination.  Default
+  is 0.
+
+  The value is a comma-delimited list of numbers in the range 0-127,
+  or ranges (i-j, taken inclusive).  An exclamation mark in front of
+  the number or range excludes it from the list of successful codes.
+  
+  The list of succesful codes is used when micrond needs to know whether
+  the job has terminated successfully, i.e. when _JOB_RETRY_INTERVAL is
+  defined for that job, or that job is listed as a dependency for another
+  job and a retry interval is defined.
+
+** Compatibility with Dillon cron daemon.
+
+For compatibility with Dillon cron, the command line can be prefixed with
+the following variable assignments:
+
+*** ID=X
+
+  Equivalent to _JOB_ID=X
+
+*** FREQ=X[/Y]
+
+  Equivalent to:
+
+  _JOB_FREQUENCY=X
+  _JOB_RETRY_INTERVAL=Y
+  _JOB_OK_EXIT=!11
+
+*** AFTER=LIST
+
+  Equivalent to
+
+  _JOB_DEPENDENCY=LIST  
+
+These assignments take effect only if they appear at the very beginning
+of the command line.
+
+They are removed from the command line before passing it to /bin/sh -c
+for execution.
+
+* Implementation details
+
+** struct cronjob
+
+The following members need to be added to struct cronjob:
+
+*** char *id;
+
+  Job id, from the _JOB_ID variable.
+
+*** unsigned frequency;
+
+  Value of the _JOB_FREQUENCY variable, converted to seconds.
+
+*** unsigned retry_interval;
+
+  Value of the _JOB_RETRY_INTERVAL variable, converted to seconds.
+
+*** exit_codes exit_ok;
+
+  Map of exit codes that indicate success.
+
+   #include <limits.h>
+   #include <string.h>
+
+   #define MAX_EXIT_CODE 127
+   #define EXIT_CODES_BYTES ((MAX_EXIT_CODE + CHAR_BIT - 1) / CHAR_BIT)
+   typedef struct { char mask[EXIT_CODES_BYTES]; } exit_codes;
+
+   #define EXIT_CODES_CLEAR(exc) memset(exc, 0, sizeof((*exc)))
+
+   #define EXIT_CODE_BYTE(n) ((n) / CHAR_BIT)
+   #define EXIT_CODE_MASK(n) (1 << ((n) % CHAR_BIT))
+
+   #define EXIT_CODE_SET(exc,n) \
+	   ((exc)->mask[EXIT_CODE_BYTE(n)] |= EXIT_CODE_MASK(n))
+   #define EXIT_CODE_UNSET(exc,n) \
+	   ((exc)->mask[EXIT_CODE_BYTE(n)] &= ~EXIT_CODE_MASK(n))
+   #define EXIT_CODE_ISSET(exc,n) \
+	   ((exc)->mask[EXIT_CODE_BYTE(n)] & EXIT_CODE_MASK(n))
+
+   #define CRONJOB_EXIT_OK(job) \
+           EXIT_CODE_ISSET((job)->exit_ok, (job)->exit_code)           
+
+*** struct list_head dep;
+
+  List of dependecies.  Each element is:
+
+  struct dependency {
+          struct cronjob *job; /* Pointer to the dependency job */
+	  int ttw;             /* Time to wait (seconds) after job
+                                  termination */
+	  time_t start_time;   /* Time the dependency was last
+                                  scheduled */
+          struct list_head link;
+  };
+
+*** struct list_head ntf.
+
+  Provides a backlink from a dependency to its dependant.  Each
+  element is:
+
+  struct notifier {
+          struct cronjob *job; /* Dependent job */
+	  struct list_head link;
+  };
+
+*** int exit_code;
+
+  Exit code from the prior run.
+
+(FIXME: This estimation is outdated:
+
+On a 64-bit system, this amounts to 57 bytes of additional storage
+in struct cronjob, or 22% of increase in size.)
+
+FIXME: Moving it to a dedicated structure and keeping a pointer to
+that structure in struct crontab would mitigate the impact:
+
+  struct job_extra_data {
+          char *id;
+	  unsigned frequency;
+	  unsigned retry_interval;
+	  exit_codes exit_ok;
+	  struct list_head dep;
+	  struct list_head ntf;
+	  int exit_code;
+  };	  
+
+** Implementation of frequency/retries
+
+1. The cronjob_arm function (micrond.c:892) adjusts job->next_time so
+that recent_start_time + job->frequency <= next_time, where
+recent_start_time is the value of job->next_time at the entry to the
+function.
+
+2. The cron_thr_cleaner function (runner.c:444) saves the job exit code
+in the exit_code field.
+
+If the retry_interval is set and exit_code is not in exit_ok
+(!CRONJOB_EXIT_OK(job)) the function calls cronjob_rearm_failed to re-arm
+the job at a latter date.
+
+3. The new function cronjob_rearm_failed locks the cronjob_mutex,
+removes the job from the list, recomputes its startup time as
+(current_time + retry_interval)
+and inserts it in the appropriate position in the cronjob_head list.
+
+  void cronjob_rearm_failed(struct cronjob *job);
+
+Except as computing the next_time value, this function works similarly
+to cronjob_arm (without the apply_now parameter).  Special care should
+be taken to properly rearming the reboot jobs.  If the job is inserted
+at the list head, the function broadcasts to cronjob_cond condition.
+This will break from timedwait in cron_thr_main and will be handled by
+the "Just in case..." condition in micrond.c:2435.
+
+FIXME: The latter should also be done in cronjob_arm, perhaps.
+
+** Implementation of inter-job dependencies
+
+*** The dependent job
+
+A non-empty dep list in struct cronjob indicates that this job
+depends on one or more other jobs and defines these dependencies.
+
+When crontab_arm is invoked on a job with a non-empty dep list, it
+first scans the list.  For each dependency, it checks whether the
+dependency has terminated (start_time != NULL) and if so whether it
+has terminated successfully (!CRONJOB_EXIT_OK(dep->job)). 
+
+If at least one of these conditions isn't met, the job is not armed.
+
+Otherwise, the sum (dep->start_time + dep->ttw) is computed.  At the
+end of iteration, the maximum value of these sums is stored in the
+local variable (min_start_time).
+
+Then, the job->next_time value is computed and compared with the
+value of min_start_time.  This step is repeated until job->next_time
+becomes equal to or greater than min_start_time.
+
+Finally, the job is armed.
+
+*** Dependency jobs
+
+When a job terminates (runner.c:444), after the job exit status is
+saved (see "Implementation of frequency/retries", p.2), the
+cron_thr_cleaner loop checks if it has dependents that need to be
+notified on the fact (!list_head_is_empty(job->ntf)).  If so, the ntf
+list is iterated over.  For each ntf->job from the list, the dep list
+is iterated to find the matching dep, and its start_time is set to the
+value of next_time of the terminated job.  Then an attempt to re-arm
+the job is done, by calling a wrapper to cronjob_arm that ensures
+proper locking of the schedule list. 
+
+NOTE: @reboot jobs can have dependencies as well.
