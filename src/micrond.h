@@ -60,23 +60,8 @@ struct cronjob {
     unsigned runcnt;           /* Number of instances running */
 };
 
-static inline void
-cronjob_ref(struct cronjob *cp)
-{
-    cp->refcnt++;
-}
-
-static inline struct cronjob *
-cronjob_unref(struct cronjob *cp)
-{
-    if (--cp->refcnt == 0) {
-	LIST_REMOVE(cp, list);
-	LIST_REMOVE(cp, runq);
-	free(cp);
-	cp = NULL;
-    }
-    return cp;
-}
+void cronjob_ref(struct cronjob *cp);
+void cronjob_unref(struct cronjob *cp);
 
 static inline int
 timespec_cmp(struct timespec const *a, struct timespec const *b)

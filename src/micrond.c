@@ -140,8 +140,8 @@ static struct cronjob_options micron_options = {
 static void set_crontab_options(char *str);
 
 static int crongroup_init(struct crongroup *cgrp);
-int crongroup_parse(struct crongroup *cgrp, int ifmod);
-void crongroup_forget_crontabs(struct crongroup *cgrp);
+static int crongroup_parse(struct crongroup *cgrp, int ifmod);
+static void crongroup_forget_crontabs(struct crongroup *cgrp);
 
 static void *cron_thr_main(void *);
 static void stop_thr_main(pthread_t tid);
@@ -981,6 +981,26 @@ micron_environ_build(struct micron_environ *micron_env, struct list_head *head)
     return NULL;
 }
 
+static pthread_mutex_t cronjob_ref_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void
+cronjob_ref(struct cronjob *cp)
+{
+    pthread_mutex_lock(&cronjob_ref_mutex);
+    cp->refcnt++;
+    pthread_mutex_unlock(&cronjob_ref_mutex);
+}
+
+void
+cronjob_unref(struct cronjob *cp)
+{
+    pthread_mutex_lock(&cronjob_ref_mutex);
+    if (--cp->refcnt == 0) {
+	free(cp);
+    }
+    pthread_mutex_unlock(&cronjob_ref_mutex);
+}
+
 static struct list_head cronjob_head = LIST_HEAD_INITIALIZER(cronjob_head);
 static pthread_mutex_t cronjob_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cronjob_cond = PTHREAD_COND_INITIALIZER;
@@ -1202,7 +1222,7 @@ crontab_find(struct crongroup *cgrp, char const *filename, int alloc)
     return cp;
 }
 
-void
+static void
 crontab_clear(struct crontab *cp, int reset)
 {
     struct micron_environ *env;
@@ -1216,7 +1236,7 @@ crontab_clear(struct crontab *cp, int reset)
     }
 }
 
-void
+static void
 crontab_forget(struct crontab *cp)
 {
     crontab_clear(cp, 0);
@@ -2195,14 +2215,15 @@ crontab_scanner_schedule(void)
 	    return;
     }
     micron_parse("* * * * *", NULL, &schedule);
+    pthread_mutex_lock(&cronjob_mutex);    
     cp = cronjob_alloc(NULL, -1, JOB_INTERNAL, &schedule,
 		       NULL, "<internal scanner>", NULL);
     if (!cp) {
 	micron_log(LOG_ERR, "out of memory while installing internal scanner");
 	/* Try to continue anyway */
-	return;
-    }
-    cronjob_arm(cp, 0);
+    } else
+	cronjob_arm(cp, 0);
+    pthread_mutex_unlock(&cronjob_mutex);    
 }
 
 static int
@@ -2477,7 +2498,7 @@ crongroup_skip_name(struct crongroup *cgrp, char const *name)
 	    patmatch(cgrp->exclude, name));
 }
 
-int
+static int
 crongroup_parse(struct crongroup *cgrp, int ifmod)
 {
     int dirfd;
@@ -2574,7 +2595,7 @@ crongroup_parse(struct crongroup *cgrp, int ifmod)
     return rc;
 }
 
-void
+static void
 crongroup_forget_crontabs(struct crongroup *cgrp)
 {
     if (cgrp->type == CGTYPE_GROUPHOST) {
