@@ -52,7 +52,7 @@ struct cronjob {
     struct list_head list;     /* Links to the next and prev crontab entries */
     struct list_head runq;     /* Links to the next and prev runqueue
 				  entries */
-    int fileid;                /* Crontab identifier */
+    unsigned fileid;           /* Crontab identifier */
     int syslog_facility;
     char *syslog_tag; 
     char *mailto;

@@ -1006,7 +1006,7 @@ static pthread_mutex_t cronjob_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cronjob_cond = PTHREAD_COND_INITIALIZER;
 
 static void
-cronjob_head_remove(int fileid)
+cronjob_head_remove(unsigned fileid)
 {
     struct cronjob *cp, *prev;
     LIST_FOREACH_SAFE(cp, prev, &cronjob_head, list) {
@@ -1066,7 +1066,7 @@ find_percent(char *p)
 
 static struct cronjob *
 cronjob_alloc(struct cronjob_options const *opt,
-	      int fileid, int type,
+	      unsigned fileid, int type,
 	      struct micronexp const *schedule,
 	      struct passwd const *pwd,
 	      char const *command, struct micron_environ *env)
@@ -1184,7 +1184,7 @@ cronjob_arm(struct cronjob *job, int apply_now)
 }
 
 struct crontab {
-    int fileid;
+    unsigned fileid;
     struct crongroup *crongroup;
     char *filename;
     struct list_head list;
@@ -1193,7 +1193,7 @@ struct crontab {
 };
 
 static struct list_head crontabs = LIST_HEAD_INITIALIZER(crontabs);
-static int next_fileid;
+static unsigned next_fileid;
 
 static struct crontab *
 crontab_find(struct crongroup *cgrp, char const *filename, int alloc)
@@ -2617,10 +2617,12 @@ crongroup_forget_crontabs(struct crongroup *cgrp)
 void
 crontab_deleted(struct crongroup *cgrp, char const *name)
 {
-    struct crontab *cp = crontab_find(cgrp, name, 1);
+    struct crontab *cp;
     pthread_mutex_lock(&cronjob_mutex);
-    cronjob_head_remove(cp->fileid);
-    pthread_cond_broadcast(&cronjob_cond);
+    if ((cp = crontab_find(cgrp, name, 0)) != NULL) {
+	crontab_forget(cp);
+	pthread_cond_broadcast(&cronjob_cond);
+    }
     pthread_mutex_unlock(&cronjob_mutex);
 }
 
