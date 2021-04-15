@@ -1,7 +1,11 @@
-micron -- history of user-visible changes. 2021-02-15
+micron -- history of user-visible changes. 2021-04-15
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
+
+Version 1.2, 2021-04-15
+
+* Fix cronjob access serialization
 
 Version 1.1, 2021-02-15
 
@@ -11,7 +15,7 @@ Version 1.0, 2021-02-03
 
 * Restore signal handlers in cronjobs
 
-* Improvemens in foreground mode
+* Improvements in foreground mode
 
 ** Redirect /dev/null to stdin
 
