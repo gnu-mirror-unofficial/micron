@@ -1,7 +1,15 @@
-micron -- history of user-visible changes. 2021-04-15
+micron -- history of user-visible changes. 2021-05-06
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
+
+Version 1.2.90 (git)
+
+* New option -P FILE
+
+Writes PID of the running process to FILE.  The file will be removed
+when the program terminates.
+
 
 Version 1.2, 2021-04-15
 

@@ -128,7 +128,8 @@ int log_level = LOG_INFO;
 mode_t saved_umask;
 /* Time to wait for all cronjobs to terminate before stopping micrond. */
 unsigned micron_termination_timeout = 60;
-    
+/* Name of the file where to store the PID */
+char *pidfile;
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
 static struct cronjob_options micron_options = {
@@ -265,6 +266,7 @@ usage(void)
     printf("    -m MAILER       set mailer command\n");
     printf("    -N              disable safety checking (for debugging only!)\n");
     printf("    -o OPTS         set crontab options\n");
+    printf("    -P FILE         write the PID of the cron daemon to FILE\n");
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
     printf("    -S              log to syslog even if running in foreground\n");
     printf("    -s              log output from cronjobs to syslog\n");
@@ -345,7 +347,7 @@ main(int argc, char **argv)
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:fNl:m:o:p:Sst:v")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:Sst:v")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -379,6 +381,10 @@ main(int argc, char **argv)
 	    set_crontab_options(optarg);
 	    break;
 
+	case 'P':
+	    pidfile = optarg;
+	    break;
+	    
 	case 'p':
 	    micron_log_dev = optarg;
 	    break;
@@ -460,6 +466,18 @@ main(int argc, char **argv)
     } else if (micron_options.syslog_facility)
 	micron_log_open(progname, LOG_CRON);
 
+    if (pidfile) {
+	FILE *fp = fopen(pidfile, "w");
+	if (fp) {
+	    fprintf(fp, "%lu\n", (unsigned long) getpid());
+	    fclose(fp);
+	} else {
+	    micron_log(LOG_ERR, "can't open pidfile %s for writing: %s",
+		       pidfile, strerror(errno));
+	    pidfile = NULL;
+	} 
+    }
+    
     saved_umask = umask(077);
     crongroups_parse_all(PARSE_ALWAYS);
 
@@ -507,6 +525,9 @@ main(int argc, char **argv)
 	    thread_info[i].stop(thread_info[i].tid);
     }
 
+    if (pidfile)
+	unlink(pidfile);
+    
     micron_log_close();
     
     return EXIT_OK;

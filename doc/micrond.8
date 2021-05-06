@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH MICROND 8 "January 24, 2021" "MICROND" "System Manager's Manual"
+.TH MICROND 8 "May 6, 2021" "MICROND" "System Manager's Manual"
 .SH NAME
 micrond \- a minimal cron implementation
 .SH SYNOPSIS
@@ -23,6 +23,7 @@ micrond \- a minimal cron implementation
  [\fB\-l \fIPRI\fR]\
  [\fB\-m \fIMAILER\fR]\
  [\fB\-o \fIOPTIONS\fR]\
+ [\fB\-P \fIFILE\fR]\
  [\fB\-p \fIDEV\fR]\
  [\fB\-t \fISECONDS\fR]
 .SH DESCRIPTION
@@ -196,6 +197,10 @@ for a discussion of day field semantics.
 .br
 See also the \fB_MICRON_DAY_SEMANTICS\fR built-in variable.
 .RE
+.TP
+\fB\-P \fIFILE\fR
+Write the PID of the cron daemon to \fIFILE\fR.  The file will be
+removed when the program terminates.
 .TP
 \fB\-p \fISOCKET\fR
 Send messages to syslog via this socket.  \fISOCKET\fR is either an
