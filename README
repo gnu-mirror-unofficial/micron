@@ -1,346 +1,286 @@
-			  ___________________
+Micron README
+See the end of file for copying conditions.
 
-				 MICRON
+* Overview
 
-			   Sergey Poznyakoff
-			  ___________________
+This file contains brief information about configuring, setting up
+and running micrond and associated programs.  It is *not* intended as
+a replacement for the documentation, and is provided as a brief
+reference only.
 
+The complete documentation is shipped in the doc/ subdirectory, in
+texifo format, as well as in a form of traditional UNIX manpages.  To
+read the docs without installing micron, run `info -f
+doc/micron.info'.  After the package is installed, it should suffice
+to run `info micron'.
 
-Table of Contents
-_________________
+The documentation in various formats is available online at:
 
-1 Overview
-2 Crontabs
-3 Features
-.. 3.1 User group crontabs
-.. 3.2 Long crontab lines
-.. 3.3 Built-in variables
-.. 3.4 The day field semantics
-.. 3.5 Variable assignment in crontabs
-.. 3.6 Job output report
-.. 3.7 Simultaneous job execution
-.. 3.8 Detection of crontab modifications
-4 Downloads and Installation
-5 The name
-6 References
-7 Bug reports
-8 Copyright
+  https://www.gnu.org.ua/software/micron
+ 
+* Introduction
 
+Micron is an implementation of the UNIX cron daemon, a program that
+executes periodically various tasks.  It aims to provide several
+enhancements while being mostly backward-compatible with the two most
+widely used cron implementations: Vixie and Dillon crons.
 
-1 Overview
-==========
+The implementation consists of two binaries: the main daemon micrond
+and the crontab utility.
 
-  *Micron* is an implementation of the UNIX *cron* daemon, a program
-  that executes periodically various tasks.  It aims to provide several
-  enhancements while being mostly backward-compatible with the two most
-  widely used cron implementations: Vixie and Dillon crons.
+* Crontabs
 
-  The implementation consists of two binaries: the main daemon *micrond*
-  and the *crontab* utility.
+The instructions specifying what commands to run and when are kept in
+a set of crontab files.  Micrond reads its crontabs at startup and
+loads them to memory.  When running, it keeps track of crontab
+modifications and updates its in-memory tables as soon as a
+modification is detected.
 
+The crontabs are stored in several locations, collectively known as
+"crontab groups":
 
-2 Crontabs
-==========
+**  master crontab
 
-  The instructions specifying what commands to run and when are kept in
-  a set of _crontab_ files.  *Micrond* reads its crontabs at startup and
-  loads them to memory.  When running, it keeps track of crontab
-  modifications and updates its in-memory tables as soon as a
-  modification is detected.
+Master crontab is read from the file /etc/crontab.
 
-  The crontabs are stored in several locations, collectively known as
-  _crontab groups_:
+** system crontabs
 
-  master crontab: Master crontab is read from the file */etc/crontab*.
+A collection of crontab files in the /etc/cron.d directory.
 
-  system crontabs: A collection of crontab files in the */etc/cron.d*
-                     directory.
+** user crontabs
 
-  user crontabs: Per-user crontabs are located in
-                   */var/spool/cron/crontabs*.
+Individual user crontabs are located in /var/spool/cron/crontabs.
 
-  user group crontabs: A special crontab group intended for use with
-                       pseudo-accounts, such as *apache* or *bind*.
-                       Crontabs of this group are located in
-                       subdirectories of */var/spool/cron/crongroups*
-                       named by the corresponding account.  This crontab
-                       group will be described in detail later.
+** user group crontabs
 
-  Each _active_ (i.e. non-empty and non-comment) line in a crontab
-  specifies a schedule and a command line to be run according to that
-  schedule.  Active lines in master and system crontabs specify also the
-  login name of the user on behalf of whom the command must be run.
+A special crontab group intended for use with pseudo-accounts, such
+as "apache", "www-data", or or "bind".  Crontabs of this group are
+located in subdirectories of /var/spool/cron/crongroups named by the
+corresponding account.  This crontab group will be described in detail
+later.
 
-  Both master and system crontabs are writable only by the super-user.
-
-  User and user group crontabs belong to particular users and
-  instructions they contain are executed on behalf of their owners.  To
-  enable users to manipulate their crontabs, the *crontab* command is
-  provided.
-
+Each active (i.e. non-empty and non-comment) line in a crontab
+specifies a schedule and a command line to be run according to that
+schedule.  Active lines in master and system crontabs specify also the
+login name of the user on behalf of whom the command must be run.
 
-3 Features
-==========
-
-  The following features of *micron* differ from the two reference cron
-  implementations.
-
-
-3.1 User group crontabs
-~~~~~~~~~~~~~~~~~~~~~~~
-
-  User group crontabs are an experimental feature designed to facilitate
-  maintenance of per-service crontabs.  Consider, for example, a web
-  server that runs multiple web sites maintained by various users who
-  need to run periodic backend jobs on behalf of the account the httpd
-  server runs as.  User group crontabs make it possible without
-  intervention of the system administrator.  Let's assume httpd runs as
-  the user *apache*.  The system administrator creates a directory
-  */var/spool/cron/crongroups/apache*, and sets *apache* as its owner:
+Both master and system crontabs are writable only by the super-user.
 
-  ,----
-  | mkdir /var/spool/cron/crongroups/apache
-  | chown apache: /var/spool/cron/crongroups/apache
-  `----
-
-  Then, he adds login names of the users who should be able to edit
-  apache cronjobs to the primary group of the *apache* user.  Once done,
-  these users become able to create and edit crontabs in this directory
-  using the *crontab* command with the *-g* option (short for *group*).
-  For example, the command
-
-  ,----
-  | crontab -u apache -g -e myproject
-  `----
-
-  edits the file *myproject* in this directory.
-
-  User group crontabs are disabled by default.  To enable them, run
-  *micrond* with the *-g group* option.
-
-
-3.2 Long crontab lines
-~~~~~~~~~~~~~~~~~~~~~~
-
-  Very long crontab lines can be split across several physical lines
-  using the familiar backslash continuation technique: a backslash
-  appearing immediately before the ending newline character is removed
-  along with the newline and the content of the next line is appended in
-  its place.  Multiple line continuations are allowed, as long as the
-  total line length does not exceed 1024 characters.
-
-
-3.3 Built-in variables
-~~~~~~~~~~~~~~~~~~~~~~
-
-  A number of built-in variables control the interpretation of crontab
-  entries and execution of commands.  Each built-in variable has two
-  name variants: the name prefixed with `_JOB' affects only the cron job
-  definition that immediately follows it (with optional variable
-  assignments in between), whereas the name prefixed with `_MICRON'
-  affects all commands that follow them, until another assignment of the
-  same variable is encountered or the end of file is reached.  For
-  example, the following fragment instructs *micrond* to log all output
-  produced by the command `run-periodic' to syslog facility `daemon'
-  using the tag "hourly".  These two settings affect only this
-  particular command:
-
-  ,----
-  | _JOB_SYSLOG_FACILITY = daemon
-  | _JOB_SYSLOG_TAG = hourly
-  | 
-  | 15 * * * *  root  run-periodic
-  `----
-
-  The built-in variables are described in detail in the sections that
-  follow.  For brevity, they are referred to using the `_MICRON' prefix.
+User and user group crontabs belong to particular users and
+instructions they contain are executed on behalf of their owners.
+To enable users to manipulate their crontabs, the crontab command is
+provided.
 
+* Special Features
 
-3.4 The day field semantics
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This section describes features which distinguish micrond from other
+cron implementations.
 
-  In a crontab schedule, the day of a command's execution can be
-  specified by two fields: day of month (field 3), and day of week
-  (field 5).  If both fields are restricted (i.e. are not '*'), their
-  interpretation differs among various implementations.  Vixie cron will
-  run the command when either field matches the current time (the fields
-  are joined by a logical OR).  Dillon's cron interprets the 3rd field
-  as an ordinal number of weekday in month (so that allowed numeric
-  values of the 3rd field in this case are 1-5).  Consider for example
-  the following schedule
-
-  ,----
-  | 0 11 1,4 * 1-3
-  `----
-
-  For Vixie cron, this means "run the command on each 1st and 4th day of
-  the month as well as on each Monday, Tuesday and Wednesday".  The
-  meaning of this schedule for Dillon's cron is: "run the command on
-  each first and fourth Monday, Tuesday and Wednesday in the month".
-
-  The semantics used by *micron* is configurable.  By default it assumes
-  the two fields to be joined by a logical AND, i.e. the example above
-  would mean "each first and fourth day of the month *if* the day of
-  week is Monday, Tuesday or Wednesday".  The use of Vixie or Dillon
-  semantics can be requested by setting the `_MICRON_DAY_SEMANTICS'
-  variable in the crontab.  For example, the line
-
-  ,----
-  | _MICRON_DAY_SEMANTICS = Vixie
-  `----
+** Group crontabs
 
-  requests the semantics used by Vixie cron.
+User group crontabs are an experimental feature designed to facilitate
+maintenance of per-service crontabs.  Consider, for example, a web
+server that runs multiple web sites maintained by various users who
+need to run periodic backend jobs on behalf of the account the httpd
+server runs as.  User group crontabs make it possible without
+intervention of the system administrator.  Let's assume httpd runs as
+the user "apache".  The system administrator creates a directory
+/var/spool/cron/crongroups/apache, and sets "apache"* as its owner:
 
+  mkdir /var/spool/cron/crongroups/apache
+  chown apache: /var/spool/cron/crongroups/apache
 
-3.5 Variable assignment in crontabs
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Then, he adds login names of those users who should be able to edit
+apache cronjobs to the primary group of the "apache" user.  Once done,
+these users become able to create and edit crontabs in this directory
+using the "crontab -g" command (short for "group").  For example, the
+command
 
-  Variable assignments can appear anyplace in a crontab.  The modified
-  environment remains in effect for all subsequent commands until
-  changed by another assignment or the end of file is reached, whichever
-  happens first.  For example, the output of the following two example
-  entries is mailed to two different users:
+  crontab -u apache -g -e myproject
 
-  ,----
-  | MAILTO=one
-  | * * * * * command one
-  | MAILTO=two
-  | * * * * * command two
-  `----
+edits the file "myproject" in this directory.
+
+Being an experimental feature, user group crontabs are disabled by
+default.  To enable them, run "micrond" with the "-g group" option.
+
+** Long crontab lines
+
+Very long crontab lines can be split across several physical lines
+using the familiar backslash continuation technique: a backslash
+appearing immediately before the ending newline character is removed
+along with the newline and the content of the next line is appended in
+its place.  Multiple line continuations are allowed, as long as the
+total line length does not exceed 1024 characters.
+
+** Built-in variables
 
+A number of built-in variables control the interpretation of crontab
+entries and execution of commands.  Each built-in variable has two
+name variants: the name prefixed with `_JOB' affects only the cronjob
+definition that immediately follows it (with optional variable
+assignments in between), whereas the name prefixed with `_MICRON'
+affects all commands that follow them, until another assignment of the
+same variable is encountered or the end of file is reached.  For
+example, the following fragment instructs micrond to log all output
+produced by the command `run-periodic' to syslog facility `daemon'
+using the tag "hourly".  These two settings affect only this
+particular command:
 
-3.6 Job output report
-~~~~~~~~~~~~~~~~~~~~~
+  _JOB_SYSLOG_FACILITY = daemon
+  _JOB_SYSLOG_TAG = hourly
+  15 * * * *  root  run-periodic
 
-  Output of a crontab job can be either mailed to its owner (a
-  traditional behavior) or reported via *syslog* to an arbitrary
-  facility.  This can be configured both globally (by the *-s* command
-  line option), or individually in a crontab (using the
-  `_MICRON_SYSLOG_FACILITY' variable).  Syslog tag can be supplied using
-  the `_MICRON_SYSLOG_TAG' variable.  In its absence, syslog tag is
-  constructed from the location of the job in the crontab file and first
-  word of the command, e.g.:
+The built-in variables are described in detail in
 
-  ,----
-  | /etc/crontab:14(run-parts)
-  `----
+  https://www.gnu.org.ua/software/micron/manual/Variable-Settings.html
 
+When referencing built-in variables in this document, we refer to them
+using the `_MICRON' prefix.  This means that in the sections that
+follow, any reference to the variable `_MICRON_x' (global scope),
+means that there is also the `_MICRON_x' variable, whose semantics is
+the same, but which affects only the cronjon that is defined
+immediately after it.
 
-3.7 Simultaneous job execution
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+** The day field semantics
 
-  The number of simultaneously running instances of a cron job is
-  limited.  It is controlled by the value of the `_MICRON_MAXINSTANCES'
-  variable.  The default value is 1, which means that the job won't be
-  started until its previous instance terminates.  This differs both
-  from Vixie implementation, where a job is started no matter how many
-  of its instances are running, and from Dillon's cron, which refuses to
-  start a job until its prior instance has terminated.
+In a crontab schedule, the day of a command's execution can be
+specified by two fields: day of month (field 3), and day of week
+(field 5).  If both fields are restricted (i.e. are not '*'), their
+interpretation differs among various implementations.  Vixie cron will
+run the command when either field matches the current time (the fields
+are joined by a logical OR).  Dillon's cron interprets the 3rd field
+as an ordinal number of weekday in month (so that allowed numeric
+values of the 3rd field in this case are 1-5).  Consider for example
+the following schedule
 
+  0 11 1,4 * 1-3
 
-3.8 Detection of crontab modifications
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+For Vixie cron, this means "run the command on each 1st and 4th day of
+the month as well as on each Monday, Tuesday and Wednesday".  The
+meaning of this schedule for Dillon's cron is: "run the command on
+each first and fourth Monday, Tuesday and Wednesday in the month".
+The semantics used by micron is configurable.  By default it assumes
+the two fields to be joined by a logical AND, i.e. the example above
+would mean "each first and fourth day of the month *iff* the day of
+week is Monday, Tuesday or Wednesday".  The use of Vixie or Dillon
+semantics can be requested by setting the `_MICRON_DAY_SEMANTICS'
+variable in the crontab.  For example, the line
 
-  On GNU/Linux systems, *micron* uses [inotify](8) to track crontab
-  modifications, which means that any change to a crontab is noticed as
-  soon as the crontab file is saved.
+  _MICRON_DAY_SEMANTICS = Vixie
 
-  On other systems, *micron* relies to checking the crontab modification
-  times each minute, which is less effective.
+requests the semantics used by Vixie cron.
 
-  The use of `kqueue' interface on *BSD systems is planned in future
-  versions.
+** Variable assignment in crontabs
 
+Variable assignments can appear anyplace in a crontab.  The modified
+environment remains in effect for all subsequent commands until
+changed by another assignment or the end of file is reached, whichever
+happens first.  For example, the output of the following two example
+entries is mailed to two different users: 
 
-  [inotify] http://man.gnu.org.ua/manpage/?7+inotify
+  MAILTO=one
+  * * * * * command one
+  MAILTO=two
+  * * * * * command two
 
+** Cronjob output
 
-4 Downloads and Installation
-============================
+Output of a crontab job can be either mailed to its owner (a
+traditional behavior) or reported via syslog to arbitrary facility, or
+appended to a disk file.
 
-  The program can be downloaded from
-  [https://download.gnu.org.ua/release/micron].  Before installation,
-  create a group which will be used as owner of the user and user group
-  crontab directories.  The *crontab* binary will be installed as
-  set-GID to that group.  By default, the group is named *crontab*.
-  Assuming this, the usual build sequence is
+This is controlled by the following variables: `MAILTO', `_MICRON_MAILTO',
+`_MICRON_SYSLOG_FACILITY', and `_MICRON_OUTFILE'.  For details, refer to
 
-  ,----
-  | ./configure
-  | make
-  | make install
-  `----
+  https://www.gnu.org.ua/software/micron/manual/Cronjob-Output.html
 
-  If you chose another group name, supply it to `configure' using the
-  `--with-crontab-gid' option.
+** Simultaneous job execution
 
-  The above commands will install the package under */usr/local*.  That
-  is, the server will be installed as */usr/local/sbin/micron*, the
-  *crontab* utility as */usr/local/bin/crontab*, etc.  If that's not
-  what you want, use the `--prefix' option to specify the installation
-  prefix, e.g.
+The number of simultaneously running instances of a cron job is
+limited by the value of the `_MICRON_MAXINSTANCES' variable.  The
+default value is 1, which means that the job won't be started until
+its previous instance terminates.
 
-  ,----
-  | ./configure --prefix=/usr
-  `----
+** Detection of crontab modifications
 
-  Please refer to the `INSTALL' document in the source directory for a
-  discussion of available options to configure and their effect.
+On GNU/Linux systems, micrond uses `inotify' to track crontab
+modifications.  This means that any change to a crontab is noticed as
+soon as the crontab file is saved.
 
+On other systems, micrond relies to checking the crontab modification
+times each minute, which is less effective.
 
-5 The name
-==========
+The use of `kqueue' interface on *BSD systems is planned in future
+versions.
 
-  It was thought to be a MInimal CRON implementation.  Turned out the
-  other way.
+* Downloads and Installation
 
+The program can be downloaded from
 
-6 References
-============
+  https://download.gnu.org.ua/release/micron
 
-  The complete documentation for the package is available from the
-  following locations:
+Before installation, create a group which will be used as owner of the
+user and user group crontab directories.  The `crontab' binary will be
+installed as set-GID to that group.  By default, the group is named
+"crontab".  Assuming this, the usual build sequence is
 
-  [micrond](8): The cron
-                daemon
-                program.
-  [crontab](1): Manual page
-                for the
-                *crontab*
-                utility.
-  [crontab](5): Crontab file
-                format.
+  ./configure
+  make
+  make install
 
+If you chose another group name, supply it to `configure' with the
+`--with-crontab-gid' option.
 
-  [micrond] http://man.gnu.org.ua/manpage/?8+micrond
+The above commands will install the package under "/usr/local".  That
+is, the server will be installed as "/usr/local/sbin/micron", the
+`crontab' utility as "/usr/local/bin/crontab", etc.  If that's not
+what you want, use the `--prefix' option to specify the installation 
+prefix, e.g.
 
-  [crontab] http://man.gnu.org.ua/manpage/?1+crontab
+  ./configure --prefix=/usr
 
-  [crontab] http://man.gnu.org.ua/manpage/?5+crontab
+Refer to the `INSTALL' document in the source directory for a
+discussion of available options to configure and their effect.
 
+* The name
 
-7 Bug reports
-=============
+It was thought to be a MInimal CRON implementation.  Turned out the
+other way.
 
-  If you think you found a bug in *micron* or in its documentation,
-  please send a mail to [Sergey Poznyakoff] or use the bug tracker at
-  [https://puszcza.gnu.org.ua/bugs/?group=micron] (requires
-  authorization).
+* References
 
+The complete micron documentation in varions is available from
 
-  [Sergey Poznyakoff] mailto:gray@gnu.org
+  https://www.gnu.org.ua/software/micron
 
+Download directory:
 
-8 Copyright
-===========
+  https://download.gnu.org.ua/release/micron
 
-  Copyright (C) 2020-2021 Sergey Poznyakoff
+Development version:
 
-  Permission is granted to anyone to make or distribute verbatim copies
-  of this document as received, in any medium, provided that the
-  copyright notice and this permission notice are preserved, thus giving
-  the recipient permission to redistribute in turn.
+  https://puszcza.gnu.org.ua/software/micron/
 
-  Permission is granted to distribute modified versions of this
-  document, or of portions of it, under the above conditions, provided
-  also that they carry prominent notices stating who last changed them.
+Git repository:
+
+  https://git.gnu.org.ua/micron.git/
+
+* Copyright information:
+
+Copyright (C) 2021 Sergey Poznyakoff
+
+   Permission is granted to anyone to make or distribute verbatim copies
+   of this document as received, in any medium, provided that the
+   copyright notice and this permission notice are preserved,
+   thus giving the recipient permission to redistribute in turn.
+
+   Permission is granted to distribute modified versions
+   of this document, or of portions of it,
+   under the above conditions, provided also that they
+   carry prominent notices stating who last changed them.
+
+Local Variables:
+mode: outline
+paragraph-separate: "[	]*$"
+version-control: never
+End:

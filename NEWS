@@ -16,7 +16,6 @@ built-in variables.
 
 Writes PID of the running process to FILE.  The file will be removed
 when the program terminates.
-
 
 Version 1.2, 2021-04-15
 
