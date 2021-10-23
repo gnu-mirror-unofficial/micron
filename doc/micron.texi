@@ -416,18 +416,26 @@ another setting overwrites it or the end of file is encountered.
 @anchor{built-in variables}
 The following are @dfn{built-in variables}.  They modify
 the handling of cron commands that follow them, but are not copied to
-the command environment.  Varables prefixed with @samp{_JOB_}
+the command environment.  Variables prefixed with @samp{_JOB_}
 affect only the first cron command that appears after them, whereas
 variables prefixed with @samp{_MICRON_} affect all commands that
 follow them, until another assignment of the same variable is
 encountered or the end of the file is reached.
 
+@defvr {Built-in variable} _MICRON_OUTFILE_FACILITY
+@defvrx {Built-in variable} _JOB_OUTFILE_FACILITY
+The value of this variable is treated as a file name.  If the variable
+is set, cronjob output will be directed to the named file.
+
+@xref{Sending output to file}.
+@end defvr
+
 @anchor{_MICRON_SYSLOG_FACILITY}
 @defvr {Built-in variable} _MICRON_SYSLOG_FACILITY
 @defvrx {Built-in variable} _JOB_SYSLOG_FACILITY
-If this variable is set to a meaningful syslog facility, the program
+If this variable is set to a meaningful syslog facility, the cronjob
 output will be logged to that facility (priority @samp{INFO}), instead
-of mailing it the usual way.
+of mailing it the usual way.  @xref{Logging output to syslog}.
 
 Allowed values for this variable are @code{auth}, @code{authpriv},
 @code{cron}, @code{daemon}, @code{ftp}, @code{lpr}, @code{mail},
@@ -442,10 +450,10 @@ variable (@pxref{MAILTO}).
 
 @anchor{_JOB_SYSLOG_TAG}
 @defvr {Built-in variable} _JOB_SYSLOG_TAG
-Sets the syslog tag for the next cron command.  The tag is used only if
-syslog is enabled (by the use of @option{-s} option or by the
-@env{_MICRON_SYSLOG_FACILITY} setting).  If not specified, the tag
-will be constructed as
+Sets the syslog tag for the next cron command.  The tag is used when
+logging cronjob output to syslog (@pxref{Logging output to syslog}),
+or appending it to a file (@pxref{Sending output to file}).  If not
+specified, the tag will be constructed as
 
 @example
 @var{file}:@var{line}(@var{prog})
@@ -474,7 +482,7 @@ refuse to start a job if its previous run has not yet terminated.
 @anchor{_JOB_MAILTO}
 @defvr {Built-in variable} _JOB_MAILTO
 This variable temporarily masks the @env{MAILTO} variable and disables
-the variables @env{SYSLOG_FACILITY} and @env{SYSLOG_TAG} for the
+the variables @env{SYSLOG_FACILITY} and @env{OUTFILE} for the
 next crontab entry.  After that, the previous values are restored.
 Use it to redirect the output of a single crontab entry to a
 particular email address.
@@ -484,8 +492,10 @@ The global version of this variable, @env{_MICRON_MAILTO}, is mostly
 equivalent to the traditional @env{MAILTO} variable, except that any
 existing value of @env{MAILTO} is retained in the environment.
 
-@xref{mailing the job output}, for the detailed discussion of how the
+@xref{Mailing the cronjob output}, for the detailed discussion of how the
 output is mailed.
+
+@xref{Cronjob Output}
 @end defvr
 
 @anchor{_MICRON_DAY_SEMANTICS}
@@ -509,7 +519,7 @@ variable is undefined, the output will be sent to the owner of the
 crontab.  If @env{MAILTO} is set to an empty string, no mail will be
 sent.
 
-@xref{mailing the job output}, for the detailed discussion of how the
+@xref{Mailing the cronjob output}, for the detailed discussion of how the
 output is mailed.
 @end defvr
 
@@ -525,28 +535,39 @@ the command is run.
 Defines the shell used to start commands.  Defaults to @samp{/bin/sh}.
 @end defvr
 
-@node micrond
-@chapter micrond
+@node Cronjob Output
+@section Cronjob Output
+When run, a cronjob can print something on its standard output or
+error streams.  The output it produces can be sent via email to
+a given list of addresses, appended to a file, or reported via
+syslog.  This @dfn{output redirection} can be configured either
+globally, or individually for each job.  This is controlled by the
+following variables:
 
-@command{micrond} executes commands periodically as directed by one or
-more @dfn{crontabs}.  @xref{Crontabs}, for a discussion of crontab
-locations and format.
+@table @env
+@item MAILTO
+@itemx _MICRON_MAILTO
+@itemx _JOB_MAILTO
+Send the output via email.
 
-Normally, a cron jobs is not run if its previous instance is still
-running.  For instance, if a cron job scheduled to run each minute
-takes three minutes to finish, it will be actually run once in three
-minutes.  This behavior can be altered by setting the
-@env{_MICRON_MAXINSTANCES} variable to the desired number of cron job
-instances that can be run simultaneously (use @env{_JOB_MAXINSTANCES}
-to change the setting for one cronjob only, @pxref{_MICRON_MAXINSTANCES}).
+@item _MICRON_SYSLOG_FACILITY
+@itemx _JOB_SYSLOG_FACILITY
+Report each output line via syslog.
 
-@anchor{mailing the job output}
+@item _MICRON_OUTFILE
+@item _JOB_OUTFILE
+Append the output to a file.
+@end table
+
+These settings are discussed in detail in the following subsections.
+
+@node Mailing the cronjob output
+@subsection Mailing the cronjob output
 @cindex email, job output
 @cindex @code{From:} header, job output mail
-Any output the running job produces on its standard output and
-standard error is captured.  Upon termination, it is mailed to the
-owner of the job, i.e. the user on whose behalf the job was run.  The
-message @code{From:} header is constructed as follows:
+The default behavior is to mail the cronjob output to the user on
+whose behalf the cronjob is run.  The message @code{From:} header is
+constructed as follows:
 
 @example
 From: (Cron daemon) <@var{owner}@@@var{host}>
@@ -581,6 +602,23 @@ variables discussed, or end of the crontab file, whichever occurs
 first.  It is also reflected in the environment of the job itself.
 @xref{MAILTO}.
 
+If @env{MAILTO} is unset, the default behavior (mailing to the owner)
+is restored.  If it is set to an empty string, cronjob output is
+discarded.
+
+@emph{Notice} the difference in the behavior:
+
+@table @code
+@item MAILTO =
+Restores default behavior.
+
+@item MAILTO = ""
+Discards the output.
+@end table
+
+The two built-in variables @env{_JOB_MAILTO} and @env{_MICRON_MAILTO}
+behave as @env{MAILTO}, with the following differences:
+
 The @env{_JOB_MAILTO} variable, if set, affects only the cronjob that
 immediately follows it.  It is not reflected in the environment.
 @xref{_JOB_MAILTO}.
@@ -589,17 +627,116 @@ The @env{_MICRON_MAILTO} variable is rarely used.  It works exactly as
 @env{MAILTO}, except that the actual value of the latter remains
 unchanged.  It is not reflected in the environment, neither.
 
-The mail is sent using @command{/usr/sbin/sendmail -oi -t}.  The
-administrator can supply alternative mailer command via the
-@option{-m} command line option.
+@node Logging output to syslog
+@subsection Logging output to syslog
+@kwindex _MICRON_SYSLOG_FACILITY
+To send the output of all the cronjobs to the syslog, assign the name
+of the syslog facility to the built-in variable
+@env{_MICRON_SYSLOG_FACILITY}, e.g.:
 
-Instead of mailing the job output, @command{micrond} can be configured to
-send it to a particular syslog facility.  If so configured, the
-output is logged synchronously with the job execution.  The syslog 
-configuration can be global, using the @option{-s} and @option{-o}
-command line options, per-crontab, using the
-@env{_MICRON_SYSLOG_FACILITY} variable, or even per-job, using the
-@env{_JOB_SYSLOG_FACILITY} variable setting.  @xref{_MICRON_SYSLOG_FACILITY}.
+@example
+_MICRON_SYSLOG_FACILITY = local0
+@end example
+
+Valid facility names are @code{auth}, @code{authpriv},
+@code{cron}, @code{daemon}, @code{ftp}, @code{lpr}, @code{mail},
+@code{news}, @code{syslog}, @code{user}, @code{uucp}, and @code{local0}
+through @code{local7}.
+
+Similarly, to log only the output of a single cronjob, define the
+variable @env{_JOB_SYSLOG_FACILITY} immediately before that cronjob.
+
+@anchor{cronjob tag}
+In the produced log, each line of a cronjob output will be tagged with
+a fully-qualified name of the cronjob, constructed as:
+
+@example
+@var{file}:@var{line}(@var{prog})
+@end example
+
+You can alter this using the @env{_JOB_SYSLOG_TAG} variable.  The
+following example illustrates the use of the two per-job syslog
+variables:
+
+@example
+_JOB_SYSLOG_FACILITY = daemon
+_JOB_SYSLOG_TAG = daily_cleanup
+0 1 * * *  root  /usr/local/bin/cleanup
+@end example
+
+@node Sending output to file
+@subsection Sending output to file
+@kwindex _MICRON_OUTFILE
+To redirect cronjob output to a file, use the @env{_MICRON_OUTFILE}
+or @env{_JOB_OUTFILE} built-in variable.  The value of these variables
+is the name of file to redirect output to.  For example, to redirect
+output of all cronjobs in a crontab to the file
+@file{/var/log/cronout}, place the following at the beginning of the
+crontab:
+
+@example
+_MICRON_OUTFILE = /var/log/cronout
+@end example
+
+When @command{micrond} is run in a docker container, you can redirect
+the output of all cronjobs to the container log as follows:
+
+@example
+_MICRON_OUTFILE = /proc/1/fd/1
+@end example
+
+@kwindex _JOB_OUTFILE
+The @env{_JOB_OUTFILE} variable affects only the cronjob that follows it.
+
+Output from each job is appended to the output file in a single
+chunk, which appears between the following two delimiter lines:
+
+@example
+@var{ts_start}: @var{tag} output begins
+@end example
+
+@noindent
+@example
+@var{ts_end}: @var{tag} output ends
+@end example
+
+@noindent
+where @var{ts_start} and @var{ts_end} are job start and
+termination timestamps in ISO 8601 format, and @var{tag} is the
+cronjob tag, formatted as described in @ref{cronjob tag}.  If the
+@env{_SYSLOG_TAG} variable is defined, its value will be used instead.
+
+For example:
+
+@example
+@group
+2021-10-23T03:00:00: /etc/cron.d/backup:16(daily_backup) output begins
+.
+.
+.
+2021-10-23T03:07:15: /etc/cron.d/backup:16(daily_backup) output ends
+@end group
+@end example
+
+@node micrond
+@chapter micrond
+
+@command{micrond} executes commands periodically as directed by one or
+more @dfn{crontabs}.  @xref{Crontabs}, for a discussion of crontab
+locations and format.
+
+Normally, a cron jobs is not run if its previous instance is still
+running.  For instance, if a cron job scheduled to run each minute
+takes three minutes to finish, it will be actually run once in three
+minutes.  This behavior can be altered by setting the
+@env{_MICRON_MAXINSTANCES} variable to the desired number of cron job
+instances that can be run simultaneously (use @env{_JOB_MAXINSTANCES}
+to change the setting for one cronjob only, @pxref{_MICRON_MAXINSTANCES}).
+
+Depending on the cronjob settings, any data the running job produces
+on its standard output and standard error can be logged via syslog in
+real time, or captured and, upon termination of the job, mailed to the
+job owner or appended to a file (@pxref{Cronjob Output}).
 
 On GNU/Linux systems, @command{micrond} monitors each opened crontab
 for modifications and re-reads it as soon as it is written to disk.
@@ -617,7 +754,7 @@ Unless otherwise configured by the options, upon startup
 remains in the background.  During normal execution it logs its
 diagnostic messages (if any) via @code{syslog} facility @samp{cron}.
 Eventual output and error diagnostics from the invoked cron jobs are
-mailed to the job owner, as described in @ref{mailing the job output}.
+mailed to the job owner, as described in @ref{Mailing the cronjob output}.
 
 The following options modify the @command{micrond} behavior:
 
@@ -742,7 +879,7 @@ crongroup} contains user crontabs editable by a group of users
 (@pxref{Crongroups}).
 
 By default, @command{crontab} operates on per-user crontabs.  To edit
-group crontabs, the @option{-g} option must be specifed.
+group crontabs, the @option{-g} option must be specified.
 
 When run without arguments, @command{crontab} enters @dfn{copy mode},
 in which it copies the content of the supplied file to the user
@@ -873,7 +1010,7 @@ Print program version, licensing information and exit.
 @node Features
 @chapter Key Features
 
-The following sections desribe features specific to @command{micrond}. 
+The following sections describe features specific to @command{micrond}. 
 
 @node User Group Crontabs
 @section User Group Crontabs
@@ -1010,20 +1147,30 @@ MAILTO=two
 
 Output of a crontab job can be either mailed to its owner (a
 traditional behavior) or reported via @command{syslog} to arbitrary 
-facility.  This can be configured both globally (by the @option{-s}
-command line option), or individually in a crontab (using the
-@env{_MICRON_SYSLOG_FACILITY} variable,
-@pxref{_MICRON_SYSLOG_FACILITY}).  Syslog tag can be supplied   
-using the @env{_JOB_SYSLOG_TAG} variable
+facility, or appended to a disk file.
+
+The default behavior is to send the output to the user on whose
+behalf the cronjob was run.  This in discussed in @ref{Mailing the
+cronjob output}.
+
+When syslog is requested, each line of the cronjob output is sent to
+the syslog in real time.  This setting can be enabled either globally
+by the use @option{-s} command line option, individually in a crontab
+(using the @env{_MICRON_SYSLOG_FACILITY} variable), or individually
+for a cronjob using the @env{_JOB_SYSLOG_FACILITY} variable.
+
+Syslog tag can be supplied using the @env{_JOB_SYSLOG_TAG} variable
 (@pxref{_JOB_SYSLOG_TAG}).  In its absence, syslog tag is
 constructed from the location of the job in the crontab file and the
-first word of the command, e.g.:
+first word of the command.
 
-@example
-/etc/crontab:14(run-parts)
-@end example
+For a detailed discussion of syslog redirection, @xref{Logging output
+to syslog}.
 
-@xref{mailing the job output}, for details.
+Finally, the output can be captured and appended to a given disk file
+upon termination of the cronjob.  This can be useful, e.g. when
+running @command{micrond} in a Docker container.  @xref{Logging output
+to syslog}.
 
 @node Simultaneous Job Execution
 @section Simultaneous Job Execution

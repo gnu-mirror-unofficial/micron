@@ -135,7 +135,7 @@ static int running;
 static struct cronjob_options micron_options = {
     .dsem = MICRON_DAY_STRICT,
     .maxinstances = 1,
-    .syslog_facility = 0
+    .output_type = cronjob_output_mail
 };    
 
 static void set_crontab_options(char *str);
@@ -343,7 +343,6 @@ main(int argc, char **argv)
 	}
     };
     static int nthr = sizeof(thread_info) / sizeof(thread_info[0]);
-
     
     set_progname(argv[0]);
     
@@ -394,6 +393,7 @@ main(int argc, char **argv)
 	    break;
 	    
 	case 's':
+	    micron_options.output_type = cronjob_output_syslog;
 	    micron_options.syslog_facility = LOG_CRON;
 	    break;
 
@@ -463,7 +463,7 @@ main(int argc, char **argv)
     if (log_to_syslog) {
 	micron_log_open(progname, LOG_CRON);
 	micron_logger = micron_syslog;
-    } else if (micron_options.syslog_facility)
+    } else if (micron_options.output_type == cronjob_output_syslog)
 	micron_log_open(progname, LOG_CRON);
 
     if (pidfile) {
@@ -515,7 +515,13 @@ main(int argc, char **argv)
     pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 
     /* Wait for signal to arrive */
-    sigwait(&sigs, &i);
+    while (1) {
+	sigwait(&sigs, &i);
+	if (i == SIGHUP)
+	    outfiles_close();
+	else
+	    break;
+    }
     micron_log(LOG_NOTICE, "cron shutting down on signal \"%s\"",
 	       strsignal(i));
 
@@ -1017,6 +1023,8 @@ cronjob_unref(struct cronjob *cp)
 {
     pthread_mutex_lock(&cronjob_ref_mutex);
     if (--cp->refcnt == 0) {
+	if (cp->output_type == cronjob_output_file)
+	    outfile_release(cp->output.file);
 	free(cp);
     }
     pthread_mutex_unlock(&cronjob_ref_mutex);
@@ -1093,9 +1101,13 @@ cronjob_alloc(struct cronjob_options const *opt,
 	      char const *command, struct micron_environ *env)
 {
     struct cronjob *job;
-    char const *tag = (opt && opt->syslog_facility)
-	               ? string_value(opt->syslog_tag) : NULL;
-    char const *mailto = opt ? string_value(opt->mailto) : NULL;
+    char const *mailto =
+	opt && opt->output_type == cronjob_output_mail
+	   ? string_value(opt->mailto) : NULL;
+    char const *tag =
+	(opt && (opt->output_type == cronjob_output_syslog ||
+		 opt->output_type == cronjob_output_file))
+	   ? string_value(opt->syslog_tag) : NULL;
     size_t size = sizeof(*job) + strlen(command) + 1 +
 	            (tag ? strlen(tag) + 1 : 0) +
 	            (mailto ? strlen(mailto) + 1 : 0);
@@ -1107,7 +1119,19 @@ cronjob_alloc(struct cronjob_options const *opt,
 
 	if (opt) {
 	    job->maxinstances = opt->maxinstances;
-	    job->syslog_facility = opt->syslog_facility;
+	    job->output_type = opt->output_type;
+	    switch (job->output_type) {
+	    case cronjob_output_syslog:
+		job->output.syslog_facility = opt->syslog_facility;
+		break;
+		
+	    case cronjob_output_file:
+		job->output.file = outfile_find(string_value(opt->outfile));
+		break;
+
+	    case cronjob_output_mail:
+		/* Handled below */;
+	    }	    
 	}
 	
 	job->type = type;
@@ -1148,9 +1172,10 @@ cronjob_alloc(struct cronjob_options const *opt,
 	    strcpy(job->syslog_tag, tag);
 	    p += strlen(tag) + 1;
 	}
+	
 	if (mailto) {
-	    job->mailto = p;
-	    strcpy(job->mailto, mailto);
+	    job->output.mailto = p;
+	    strcpy(job->output.mailto, mailto);
 	}
 	if (pwd) {
 	    job->uid = pwd->pw_uid;
@@ -1602,6 +1627,7 @@ cronjob_options_ref(struct cronjob_options **popt)
 	opt->perjob = 1;
 	string_ref(opt->mailto);
 	string_ref(opt->syslog_tag);
+	string_ref(opt->outfile);
 	opt->prev = *popt;
 	*popt = opt;
     }
@@ -1614,15 +1640,35 @@ cronjob_options_unref(struct cronjob_options **popt)
     struct cronjob_options *opt = *popt;
     string_free(opt->mailto);
     string_free(opt->syslog_tag);
+    string_free(opt->outfile);
     if (opt->perjob) {
 	*popt = opt->prev;
 	free(opt);
     }
 }
+
+static void
+cronjob_options_output_fixup(struct cronjob_options *opt)
+{
+    switch (opt->output_type) {
+    case cronjob_output_mail:
+	break;
+
+    case cronjob_output_file:
+	if (!string_value(opt->outfile))
+	    opt->output_type = cronjob_output_mail;
+	break;
+
+    case cronjob_output_syslog:
+	if (opt->syslog_facility == 0)
+	    opt->output_type = cronjob_output_mail;
+	break;
+    }	    
+}
 
 static int
 set_syslog_facility(char const *val, struct cronjob_options *opt,
-			  char **errmsg)
+		    char **errmsg)
 {
     int n;
 
@@ -1641,11 +1687,13 @@ set_syslog_facility(char const *val, struct cronjob_options *opt,
 	    *errmsg = "invalid value for builtin variable";
 	    return 1;
 	}
+	opt->output_type = cronjob_output_syslog;
     } else {
 	/* Unset */
-	n = 0;
+	n = 0;	
     }
     opt->syslog_facility = n;
+    cronjob_options_output_fixup(opt);
     return 0;
 }
 
@@ -1655,8 +1703,6 @@ set_syslog_tag(char const *val, struct cronjob_options *opt, char **errmsg)
     string_free(opt->syslog_tag);
     if (val) {
 	/* Set */
-	string_free(opt->mailto);
-	opt->mailto = NULL;
 	opt->syslog_tag = string_copy(val);
 	if (!opt->syslog_tag) {
 	    *errmsg = "out of memory";
@@ -1675,38 +1721,34 @@ set_builtin_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
     string_free(opt->mailto);
     if (val) {
 	/* Set */
-	opt->syslog_facility = 0;
-	string_free(opt->syslog_tag);
-	opt->syslog_tag = NULL;
 	opt->mailto = string_copy(val);
 	if (!opt->mailto) {
 	    *errmsg = "out of memory";
 	    return 1;
 	}
+	opt->output_type = cronjob_output_mail;
     } else {
 	/* Unset */
 	opt->mailto = NULL;
     }
+    cronjob_options_output_fixup(opt);
     return 0;
 }
 
 /*
  * For backward compatibility, MAILTO takes precedence over the builtin
- * variables.  The built-in value of mailto is unset.  If the value is
- * not NULL, the syslog reporting is disabled as well.  Return value is
- * always 0, so the actual value of MAILTO will be stored in the
- * environment.
+ * variables.  The built-in value of mailto is unset.  Both syslog and file
+ * output are disabled as well.  Return value is always 0, so the actual
+ * value of MAILTO will be stored in the environment.
  */
 static int
 set_env_mailto(char const *val, struct cronjob_options *opt, char **errmsg)
 {
+    opt->output_type = cronjob_output_mail;
     string_free(opt->mailto);
     opt->mailto = NULL;
-    if (val) {
-	opt->syslog_facility = 0;
-	string_free(opt->syslog_tag);
-	opt->syslog_tag = NULL;
-    }
+    string_free(opt->outfile);
+    opt->outfile = NULL;
     return 0;
 }
 
@@ -1755,6 +1797,26 @@ set_day_semantics(char const *val, struct cronjob_options *opt, char **errmsg)
 }
 
 static int
+set_outfile(char const *val, struct cronjob_options *opt, char **errmsg)
+{
+    string_free(opt->outfile);
+    if (val) {
+	/* Set */
+	opt->outfile = string_copy(val);
+	if (!opt->outfile) {
+	    *errmsg = "out of memory";
+	    return 1;
+	}
+	opt->output_type = cronjob_output_file;
+    } else {
+	/* Unset */
+	opt->outfile = NULL;
+    }
+    cronjob_options_output_fixup(opt);
+    return 0;
+}
+
+static int
 set_rovar(char const *val, struct cronjob_options *opt, char **errmsg)
 {
     *errmsg = "assignment to a read-only variable";
@@ -1783,6 +1845,7 @@ static struct vardef {
     { S(BUILTIN_MAXINSTANCES),    1, set_maxinstances },
     { S(BUILTIN_DAY_SEMANTICS),   1, set_day_semantics },
     { S(BUILTIN_MAILTO),          1, set_builtin_mailto },
+    { S(BUILTIN_OUTFILE),         1, set_outfile }, 
     { S(ENV_LOGNAME),             0, set_rovar },
     { S(ENV_USER),                0, set_rovar },
     { S(ENV_MAILTO),              0, set_env_mailto },
@@ -2169,7 +2232,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	    break;
 	}
 
-	if (opt->syslog_facility && !opt->syslog_tag) {
+	if ((opt->syslog_facility || opt->outfile) && !opt->syslog_tag) {
 	    int cmdlen = strcspn(p, " \t");
 	    size_t len = strlen(cp->crongroup->dirname) +
 		         cmdlen +

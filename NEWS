@@ -1,9 +1,16 @@
-micron -- history of user-visible changes. 2021-05-06
+micron -- history of user-visible changes. 2021-10-23
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
 
 Version 1.2.90 (git)
+
+* Appending cronjob output to a file
+
+Output of a cronjob can be captured and appended to a disk file,
+instead of sending it via email or logging it using syslog.  This is
+controlled by the _MICRON_OUTFILE (global) and _JOB_OUTFILE (per-job)
+built-in variables.
 
 * New option -P FILE
 

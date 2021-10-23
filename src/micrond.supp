@@ -29,7 +29,7 @@
 }
 
 # 
-# Per-thread storeage allocated in main thread is never freed.  It could have
+# Per-thread storage allocated in main thread is never freed.  It could have
 # been, if main() called pthread_exit() instead of final return, but if doesn't
 # seem to be worth while.
 #
@@ -48,6 +48,15 @@
    fun:crongroup_parse
    fun:crongroups_parse_all
    fun:main
+}
+{
+   priv_expand_pwdbuf reallocation from priv_getpwnam
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:realloc
+   fun:priv_expand_pwdbuf
+   fun:priv_getpwnam
+   ...
 }
 {
    priv_get_pwdbuf initial allocation

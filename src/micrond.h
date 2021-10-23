@@ -28,15 +28,25 @@ enum {
     JOB_REBOOT
 };
 
+enum cronjob_output_type {
+    cronjob_output_mail,
+    cronjob_output_file,
+    cronjob_output_syslog,
+};
+
 struct cronjob_options {
     int perjob;
     int dsem;
     unsigned maxinstances;
+    enum cronjob_output_type output_type;
     int syslog_facility;
     String syslog_tag;
     String mailto;
+    String outfile;
     struct cronjob_options *prev;
 };
+
+struct outfile;
 
 struct cronjob {
     int type;                  /* Type of this job */
@@ -53,9 +63,15 @@ struct cronjob {
     struct list_head runq;     /* Links to the next and prev runqueue
 				  entries */
     unsigned fileid;           /* Crontab identifier */
-    int syslog_facility;
+
+    enum cronjob_output_type output_type;
     char *syslog_tag; 
-    char *mailto;
+    union {
+	int syslog_facility;
+	char *mailto;
+	struct outfile *file;
+    } output;
+    
     unsigned refcnt;           /* Number of times this entry is referenced */
     unsigned runcnt;           /* Number of instances running */
 };
@@ -179,6 +195,7 @@ enum {
 #define BUILTIN_MAXINSTANCES "MAXINSTANCES"
 #define BUILTIN_DAY_SEMANTICS "DAY_SEMANTICS"
 #define BUILTIN_MAILTO "MAILTO"
+#define BUILTIN_OUTFILE "OUTFILE"
 
 /* Important environment variables */
 #define ENV_LOGNAME "LOGNAME"
@@ -218,4 +235,7 @@ char **cronjob_mkenv(struct cronjob *job);
 void env_free(char **env);
 char const *env_get(char *name, char **env);
 
+struct outfile *outfile_find(char const *name);
+void outfile_release(struct outfile *ofile);
+void outfiles_close(void);
 
