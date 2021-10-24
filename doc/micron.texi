@@ -696,6 +696,8 @@ chunk, which appears between the following two delimiter lines:
 @end example
 
 @noindent
+and
+
 @example
 @var{ts_end}: @var{tag} output ends
 @end example
@@ -1146,7 +1148,7 @@ MAILTO=two
 @section Job Output Report
 
 Output of a crontab job can be either mailed to its owner (a
-traditional behavior) or reported via @command{syslog} to arbitrary 
+traditional behavior), or reported via @command{syslog} to arbitrary 
 facility, or appended to a disk file.
 
 The default behavior is to send the output to the user on whose
@@ -1178,10 +1180,7 @@ to syslog}.
 The number of simultaneously running instances of a cron job is
 limited.  It is controlled by the value of the @env{_MICRON_MAXINSTANCES}
 variable.  The default value is 1, which means that the job won't be
-started until its previous instance terminates.  This differs both
-from Vixie implementation, where a job is started no matter how many
-of its instances are running, and from Dillon's cron, which refuses to
-start a job until its prior instance has terminated. 
+started until its previous instance terminates.
 
 @xref{_MICRON_MAXINSTANCES}.
 
