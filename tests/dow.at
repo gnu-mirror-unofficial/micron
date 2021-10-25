@@ -1,0 +1,47 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+AT_SETUP([day of week])
+
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+
+AT_CHECK([mkdir conf])
+AT_DATA([conf/crontab],
+[MAILTO=""
+0 12 * * mon,fri  root  echo Each Monday and Friday
+])
+
+AT_CHECK([
+rc -t 15 \
+   -e LD_PRELOAD=$FAKELIB_PRELOAD \
+   -e FAKETIME="@2021-10-01 00:00:00 x86400" \
+   -e FAKETIME_DONT_RESET=1 \
+   -- \
+   -T2 \
+   -N \
+   -ldebug \
+   -gmaster=conf/crontab \
+   -gnosystem \
+   -gnouser \
+   -gnogroup 2>&1 | \
+   sed -e '/cron shutting down/s/^micrond: .*: /micrond: /' \
+       -e '/exit=0/d'
+],
+[0],
+[micrond: 2021-10-01T00: [[DEBUG]] rescanning crontabs
+micrond: 2021-10-01T00: [[DEBUG]] scanning crongroup master: conf
+micrond: 2021-10-01T00: [[ERR]] conf not owned by root
+micrond: 2021-10-01T00: [[ERR]] conf/crontab not owned by root; ignored
+micrond: 2021-10-01T00: [[INFO]] reading conf/crontab
+micrond: 2021-10-01T00: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: 2021-10-01T00: [[INFO]] running reboot jobs
+micrond: 2021-10-01T12: [[DEBUG]] running "echo Each Monday and Friday" on behalf of 0.0
+micrond: 2021-10-04T12: [[DEBUG]] running "echo Each Monday and Friday" on behalf of 0.0
+micrond: 2021-10-08T12: [[DEBUG]] running "echo Each Monday and Friday" on behalf of 0.0
+micrond: 2021-10-11T12: [[DEBUG]] running "echo Each Monday and Friday" on behalf of 0.0
+micrond: 2021-10-15T12: [[DEBUG]] running "echo Each Monday and Friday" on behalf of 0.0
+micrond: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+AT_CLEANUP

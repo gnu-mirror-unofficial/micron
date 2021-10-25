@@ -51,7 +51,7 @@ AX_PTHREAD([],
 # Inotify
 # **********************	
 AC_ARG_WITH(inotify,
-	AC_HELP_STRING([--with-inotify],
+	AS_HELP_STRING([--with-inotify],
 	               [compile with inotify(7) support (Linux-specific)]),
 	[status_inotify=${withval}],
 	[status_inotify=probe])
@@ -103,19 +103,31 @@ fi
 #
 AC_SUBST([CRONTAB_GID],[crontab])
 AC_ARG_WITH([crontab-gid],
-  [AC_HELP_STRING([--with-crontab-gid=GID],
+  [AS_HELP_STRING([--with-crontab-gid=GID],
                  [use this GID as owner of the crontab binary and user and group crontab directories])],
   [CRONTAB_GID=$withval],
   [CRONTAB_GID=crontab])
 
+AC_SUBST([FAKETIME_LIBDIR])
+AC_ARG_WITH([faketime],
+  [AS_HELP_STRING([--with-faketime=DIR],
+                  [directory where libfaketime.so is located (used in testsuite)])],
+  [FAKETIME_LIBDIR=$withval])		  
+
+AC_SUBST([FAKEROOT_LIBDIR])
+AC_ARG_WITH([fakeroot],
+  [AS_HELP_STRING([--with-fakeroot=DIR],
+                  [directory where libfakeroot.so is located (used in testsuite)])],
+  [FAKEROOT_LIBDIR=$withval])		  
+
 dnl # Initialize the test suite.
-dnl AC_CONFIG_TESTDIR(tests)
-dnl AC_CONFIG_FILES([tests/Makefile tests/atlocal tests/etc/Makefile])
-dnl AM_MISSING_PROG([AUTOM4TE], [autom4te])
+AC_CONFIG_TESTDIR(tests)
+AC_CONFIG_FILES([tests/Makefile tests/atlocal])
+AM_MISSING_PROG([AUTOM4TE], [autom4te])
+
 AC_CONFIG_FILES([Makefile
 		 src/Makefile
-		 doc/Makefile
-		 tests/Makefile])
+		 doc/Makefile])
 AC_OUTPUT
 		 
 

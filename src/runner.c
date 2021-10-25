@@ -568,11 +568,13 @@ cron_thr_cleaner(void *ptr)
 		if (off == -1) {
 		    micron_log(LOG_ERR, "can't seek in temp file: %s",
 			       strerror(errno));
-		} else if (pt->job->output_type == cronjob_output_file) {
-		    cronjob_output_enqueue(pt);
-		    continue;
-		} else if (*(p = get_mailto(pt)) != 0 && mailer_start(pt, p) == 0)
-		    continue;
+		} else if (off > 0) {
+		    if (pt->job->output_type == cronjob_output_file) {
+			cronjob_output_enqueue(pt);
+			continue;
+		    } else if (*(p = get_mailto(pt)) != 0 && mailer_start(pt, p) == 0)
+			continue;
+		}
 	    }
 	}
 

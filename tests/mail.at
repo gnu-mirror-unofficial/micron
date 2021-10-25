@@ -1,0 +1,66 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+AT_SETUP([mailing cronjob output])
+
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+
+AT_CHECK([mkdir conf])
+AT_DATA([textfile],
+[A test output
+occupying several
+lines of text.
+])
+AT_CHECK([cat > conf/crontab <<EOT
+HOME = $(pwd)
+@reboot  root  cat textfile
+EOT
+])
+AT_CHECK([
+rc -e LD_PRELOAD=$FAKELIB_PRELOAD \
+   -e FAKETIME="@2021-01-01 00:00:00" \
+   -e FAKETIME_DONT_RESET=1 \
+   -e USER=root \
+   -- \
+   -N -ldebug -gmaster=conf/crontab -gnosystem -gnouser -gnogroup \
+   -m $abs_builddir/mockmail
+],
+[0],
+[],
+[micrond: [[DEBUG]] rescanning crontabs
+micrond: [[DEBUG]] scanning crongroup master: conf
+micrond: [[ERR]] conf not owned by root
+micrond: [[ERR]] conf/crontab not owned by root; ignored
+micrond: [[INFO]] reading conf/crontab
+micrond: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: [[INFO]] running reboot jobs
+micrond: [[DEBUG]] running "cat textfile" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="cat textfile"
+micrond: [[DEBUG]] command="cat textfile", mailing output to root
+micrond: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+
+AT_CHECK([
+  sed -e /^LENGTH:/d \
+      -e '/^From:/s/@[[^>]]*>/@localhost>/' \
+      -e '/^Subject:/s/@[[^>]]*>/@localhost>/' \
+      -e /^X-Cron-Env:/d mail.dump
+],
+[0],
+[MSGID: 0001
+NRCPT: 0
+From: "(Cron daemon)" <root@localhost>
+To: root
+Subject: Cron <root@localhost> cat textfile
+
+A test output
+occupying several
+lines of text.
+
+])
+
+
+AT_CLEANUP
+

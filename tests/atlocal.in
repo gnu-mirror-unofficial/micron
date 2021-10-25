@@ -1,0 +1,21 @@
+# @configure_input@                                     -*- shell-script -*-
+# Configurable variable values for Micron test suite.
+
+PATH=@abs_builddir@:@abs_top_builddir@/src:$srcdir:$PATH
+FAKETIME_LIBDIR=@FAKETIME_LIBDIR@
+FAKEROOT_LIBDIR=@FAKEROOT_LIBDIR@
+
+if test -n "$FAKETIME_LIBDIR"; then
+    if test -f "$FAKETIME_LIBDIR/libfaketimeMT.so.1"; then
+	FAKETIME_LIB="$FAKETIME_LIBDIR/libfaketimeMT.so.1"
+    fi
+fi
+if test -n "$FAKEROOT_LIBDIR"; then
+    if test -f "$FAKEROOT_LIBDIR/libfakeroot-0.so"; then
+	FAKEROOT_LIB="$FAKEROOT_LIBDIR/libfakeroot-0.so"
+    fi
+fi
+
+if test -n "$FAKETIME_LIB" -a -n "$FAKEROOT_LIB"; then
+    FAKELIB_PRELOAD="$FAKETIME_LIB:$FAKEROOT_LIB"
+fi

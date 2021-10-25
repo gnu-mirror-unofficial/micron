@@ -1,0 +1,38 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+AT_SETUP([Vixie-style input])
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+AT_CHECK([mkdir conf])
+AT_CHECK([
+cat > conf/crontab <<EOT
+HOME = $(pwd)
+@reboot  root  cat > output%Hi,%%This is Vixie-style%multiline input%text.
+EOT
+])
+AT_CHECK([
+rc -e LD_PRELOAD=$FAKELIB_PRELOAD \
+   -e FAKETIME="@2021-01-01 00:00:00" \
+   -e FAKETIME_DONT_RESET=1 \
+   -e USER=root \
+   -- \
+   -N -ldebug -gmaster=conf/crontab -gnosystem -gnouser -gnogroup \
+   -m $abs_builddir/mockmail
+],
+[0],
+[],
+[micrond: [[DEBUG]] rescanning crontabs
+micrond: [[DEBUG]] scanning crongroup master: conf
+micrond: [[ERR]] conf not owned by root
+micrond: [[ERR]] conf/crontab not owned by root; ignored
+micrond: [[INFO]] reading conf/crontab
+micrond: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: [[INFO]] running reboot jobs
+micrond: [[DEBUG]] running "cat > output" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="cat > output"
+micrond: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+AT_CLEANUP
+

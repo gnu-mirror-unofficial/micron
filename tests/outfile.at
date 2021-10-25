@@ -1,0 +1,75 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+AT_SETUP([File output])
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+AT_CHECK([mkdir conf])
+AT_DATA([j1.txt],
+[Duis aute irure dolor in reprehenderit in voluptate velit esse
+cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat
+cupidatat non proident, sunt in culpa qui officia deserunt mollit
+])
+AT_DATA([j3.txt],
+[Lorem ipsum dolor sit amet, consectetur adipiscing elit,
+sed do eiusmod tempor incididunt ut labore et dolore
+magna aliqua.
+])
+AT_CHECK([cat > conf/crontab <<EOT
+HOME = $(pwd)
+_MICRON_OUTFILE = logfile
+@reboot		root    echo Cron started
+1 * * * *	root	cat j1.txt
+_JOB_OUTFILE = logfile.1
+2 * * * *	root	echo job 2
+_JOB_SYSLOG_TAG = job_3
+3 * * * *	root	cat j3.txt
+4 * * * *	root	echo job 4
+EOT
+])
+AT_CHECK([
+rc -t 5 \
+   -e LD_PRELOAD=$FAKELIB_PRELOAD \
+   -e FAKETIME="@2021-01-01 00:00:00 x60" \
+   -e FAKETIME_DONT_RESET=1 \
+   -- \
+   -N \
+   -lerr \
+   -gmaster=conf/crontab \
+   -gnosystem \
+   -gnouser \
+   -gnogroup
+],
+[0],
+[],
+[micrond: [[ERR]] conf not owned by root
+micrond: [[ERR]] conf/crontab not owned by root; ignored
+])
+AT_CHECK([cat logfile],
+[0],
+[2021-01-01T00:00:00: conf/crontab:3(echo) output begins
+Cron started
+2021-01-01T00:00:00: conf/crontab:3(echo) output ends
+2021-01-01T00:01:00: conf/crontab:4(cat) output begins
+Duis aute irure dolor in reprehenderit in voluptate velit esse
+cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat
+cupidatat non proident, sunt in culpa qui officia deserunt mollit
+2021-01-01T00:01:00: conf/crontab:4(cat) output ends
+2021-01-01T00:03:00: job_3 output begins
+Lorem ipsum dolor sit amet, consectetur adipiscing elit,
+sed do eiusmod tempor incididunt ut labore et dolore
+magna aliqua.
+2021-01-01T00:03:00: job_3 output ends
+2021-01-01T00:04:00: conf/crontab:9(echo) output begins
+job 4
+2021-01-01T00:04:00: conf/crontab:9(echo) output ends
+])
+AT_CHECK([cat logfile.1],
+[0],
+[2021-01-01T00:02:00: conf/crontab:6(echo) output begins
+job 2
+2021-01-01T00:02:00: conf/crontab:6(echo) output ends
+])
+
+AT_CLEANUP

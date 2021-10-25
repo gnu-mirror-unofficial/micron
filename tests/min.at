@@ -1,0 +1,51 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+
+AT_SETUP([each minute])
+
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+
+AT_CHECK([mkdir conf])
+AT_DATA([conf/crontab],
+[MAILTO=""
+* * * * *  root  echo Run each minute
+])
+
+AT_CHECK([
+rc -t 9.5 \
+   -e LD_PRELOAD=$FAKELIB_PRELOAD \
+   -e FAKETIME="@2021-12-31 23:57:00 x30" \
+   -e FAKETIME_DONT_RESET=1 \
+   -- \
+   -T1 \
+   -N \
+   -ldebug \
+   -gmaster=conf/crontab \
+   -gnosystem \
+   -gnouser \
+   -gnogroup
+],
+[0],
+[],
+[micrond: 2021-12-31T23:57: [[DEBUG]] rescanning crontabs
+micrond: 2021-12-31T23:57: [[DEBUG]] scanning crongroup master: conf
+micrond: 2021-12-31T23:57: [[ERR]] conf not owned by root
+micrond: 2021-12-31T23:57: [[ERR]] conf/crontab not owned by root; ignored
+micrond: 2021-12-31T23:57: [[INFO]] reading conf/crontab
+micrond: 2021-12-31T23:57: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: 2021-12-31T23:57: [[INFO]] running reboot jobs
+micrond: 2021-12-31T23:58: [[DEBUG]] running "echo Run each minute" on behalf of 0.0
+micrond: 2021-12-31T23:58: [[DEBUG]] exit=0, command="echo Run each minute"
+micrond: 2021-12-31T23:59: [[DEBUG]] running "echo Run each minute" on behalf of 0.0
+micrond: 2021-12-31T23:59: [[DEBUG]] exit=0, command="echo Run each minute"
+micrond: 2022-01-01T00:00: [[DEBUG]] running "echo Run each minute" on behalf of 0.0
+micrond: 2022-01-01T00:00: [[DEBUG]] exit=0, command="echo Run each minute"
+micrond: 2022-01-01T00:01: [[DEBUG]] running "echo Run each minute" on behalf of 0.0
+micrond: 2022-01-01T00:01: [[DEBUG]] exit=0, command="echo Run each minute"
+micrond: 2022-01-01T00:01: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+
+AT_CLEANUP

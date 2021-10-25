@@ -130,6 +130,8 @@ mode_t saved_umask;
 unsigned micron_termination_timeout = 60;
 /* Name of the file where to store the PID */
 char *pidfile;
+/* Print timestamps with the diagnostic messages that go to stderr. */
+int print_timestamps = -1;
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
 static struct cronjob_options micron_options = {
@@ -147,15 +149,33 @@ static void crongroup_forget_crontabs(struct crongroup *cgrp);
 static void *cron_thr_main(void *);
 static void stop_thr_main(pthread_t tid);
 
+static char const *stderr_time_fmt[] = {
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%dT%H",
+};
+#define stderr_time_fmt_min 0
+#define stderr_time_fmt_max (sizeof(stderr_time_fmt)/sizeof(stderr_time_fmt[0])-1)
+
 void
 stderr_log(int prio, char const *fmt, ...)
 {
     va_list ap;
     char const *priname;
-    va_start(ap, fmt);
+
     fprintf(stderr, "%s: ", progname);
+    if (print_timestamps != -1) {
+	struct timespec ts;
+	struct tm tm;
+	char tbuf[sizeof("1970-01-01T00:00:00")];
+	clock_gettime(CLOCK_REALTIME, &ts);
+	localtime_r(&ts.tv_sec, &tm);
+	strftime(tbuf, sizeof(tbuf), stderr_time_fmt[print_timestamps], &tm);
+	fprintf(stderr, "%s: ", tbuf);
+    }
     if ((priname = micron_log_pri_to_str(prio & 0x7)) != NULL)
 	fprintf(stderr, "[%s] ", priname);
+    va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
@@ -270,6 +290,9 @@ usage(void)
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
     printf("    -S              log to syslog even if running in foreground\n");
     printf("    -s              log output from cronjobs to syslog\n");
+    printf("    -T N            when logging to stderr, add timestamp (0 - ISO 8601,\n");
+    printf("                    1 - ISO 8601 without seconds, 2 - ISO 8601 without seconds\n");
+    printf("                    and minutes)\n");
     printf("    -t SECONDS      time to wait for the cronjobs to terminate after\n"
 	   "                    sending them the SIGTERM signal before stopping\n"
 	   "                    micrond\n");
@@ -346,7 +369,7 @@ main(int argc, char **argv)
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:Sst:v")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:SsT:t:v")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -397,6 +420,18 @@ main(int argc, char **argv)
 	    micron_options.syslog_facility = LOG_CRON;
 	    break;
 
+	case 'T': {
+	    char *endp;
+	    long n = strtol(optarg, &endp, 10);
+	    if (*endp || n < stderr_time_fmt_min || n > stderr_time_fmt_max) {
+		micron_logger(LOG_CRIT, "bad time format: %s", optarg);
+		exit(EXIT_USAGE);
+	    } else {
+		print_timestamps = n;
+	    }
+	    break;
+	}
+
 	case 't': {
 	    unsigned long n;
 	    char *endp;
@@ -435,9 +470,17 @@ main(int argc, char **argv)
 	    }
 	}
 
-	if (crongroup_init(&crongroups[i]))
+	switch (crongroup_init(&crongroups[i])) {
+	case CRONTAB_SUCCESS:
+	    break;
+	    
+	case CRONTAB_UNSAFE:
+	    if (no_safety_checking)
+		break;
+	    /* fall through */
+	default:
 	    exit(EXIT_FATAL);
-	
+	}	
 	LIST_HEAD_INSERT_LAST(&crongroup_head, &crongroups[i], list);
     }
 
@@ -2401,7 +2444,7 @@ again:
 		   "can't change owner of directory %s: %s",
 		   cgrp->dirname,
 		   "no such group");
-	    return CRONTAB_FAILURE;
+	return CRONTAB_UNSAFE;
     }
 
     if (st.st_uid != pwd->pw_uid || st.st_gid != grp->gr_gid) {
@@ -2410,7 +2453,7 @@ again:
 		       "can't change owner of directory %s: %s",
 		       cgrp->dirname,
 		       strerror(errno));
-	    return CRONTAB_FAILURE;
+	    return CRONTAB_UNSAFE;
 	}
     }
 
@@ -2420,7 +2463,7 @@ again:
 		       "can't change mode of directory %s: %s",
 		       cgrp->dirname,
 		       strerror(errno));
-	    return CRONTAB_FAILURE;
+	    return CRONTAB_UNSAFE;
 	}
     }
     return CRONTAB_SUCCESS;
@@ -2729,8 +2772,8 @@ crontab_chattr(struct crongroup *cgrp, char const *name)
     struct crontab *cp = crontab_find(cgrp, name, 0);
 
     if (cgrp->flags & (CGF_DISABLED | CGF_UNSAFE))
-    micron_log(LOG_DEBUG, "crontab %s/%s changed attributes",
-	       cgrp->dirname, name);
+	micron_log(LOG_DEBUG, "crontab %s/%s changed attributes",
+		   cgrp->dirname, name);
     if (no_safety_checking)
 	return;
 

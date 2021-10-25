@@ -1,3 +1,10 @@
 logger
 parsetest
 timetest
+atconfig
+atlocal
+mockmail
+package.m4
+rc
+testsuite
+testsuite.log

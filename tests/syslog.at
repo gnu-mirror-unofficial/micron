@@ -1,0 +1,67 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+AT_SETUP([Syslog output])
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+AT_CHECK([mkdir conf])
+AT_DATA([j1.txt],
+[Duis aute irure dolor in reprehenderit in voluptate velit esse
+cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat
+cupidatat non proident, sunt in culpa qui officia deserunt mollit
+])
+AT_DATA([j3.txt],
+[Lorem ipsum dolor sit amet, consectetur adipiscing elit,
+sed do eiusmod tempor incididunt ut labore et dolore
+magna aliqua.
+])
+AT_CHECK([cat > conf/crontab <<EOT
+HOME = $(pwd)
+_MICRON_SYSLOG_FACILITY = cron
+@reboot		root    echo Cron started
+1 * * * *	root	cat j1.txt
+_JOB_SYSLOG_FACILITY = local0
+2 * * * *	root	echo job 2
+_JOB_SYSLOG_FACILITY = daemon
+_JOB_SYSLOG_TAG = job_3
+3 * * * *	root	cat j3.txt
+4 * * * *	root	echo job 4
+EOT
+])
+AT_CHECK([
+rc -t 5 \
+   -s $(pwd)/log \
+   -o logfile \
+   -e LD_PRELOAD=$FAKELIB_PRELOAD \
+   -e FAKETIME="@2021-01-01 00:00:00 x60" \
+   -e FAKETIME_DONT_RESET=1 \
+   -- \
+   -N \
+   -lerr \
+   -gmaster=conf/crontab \
+   -gnosystem \
+   -gnouser \
+   -gnogroup
+],
+[0],
+[],
+[micrond: [[ERR]] conf not owned by root
+micrond: [[ERR]] conf/crontab not owned by root; ignored
+])
+
+AT_CHECK([sed -e 's/[\[[0-9][0-9]*\]]//' logfile],
+[0],
+[<cron|info>Jan 01 00:00:00 conf/crontab:3(echo): Cron started
+<cron|info>Jan 01 00:01:00 conf/crontab:4(cat): Duis aute irure dolor in reprehenderit in voluptate velit esse
+<cron|info>Jan 01 00:01:00 conf/crontab:4(cat): cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat
+<cron|info>Jan 01 00:01:00 conf/crontab:4(cat): cupidatat non proident, sunt in culpa qui officia deserunt mollit
+<local0|info>Jan 01 00:02:00 conf/crontab:6(echo): job 2
+<daemon|info>Jan 01 00:03:00 job_3: Lorem ipsum dolor sit amet, consectetur adipiscing elit,
+<daemon|info>Jan 01 00:03:00 job_3: sed do eiusmod tempor incididunt ut labore et dolore
+<daemon|info>Jan 01 00:03:00 job_3: magna aliqua.
+<cron|info>Jan 01 00:04:00 conf/crontab:10(echo): job 4
+])
+
+AT_CLEANUP
+

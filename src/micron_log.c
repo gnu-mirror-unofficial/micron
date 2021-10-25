@@ -116,6 +116,8 @@ fallback_log(char const *fmt, ...)
 /* Interface functions */
 static void *thr_syslog(void *ptr);
 
+static int open_logger(char const *dev);
+
 /* Internal log open function */
 static inline void
 log_open(const char *ident, int facility)
@@ -125,7 +127,8 @@ log_open(const char *ident, int facility)
 	micron_log_tag = strdup(ident ? ident : DEFAULT_MICRON_LOG_TAG);
 	if (facility >= 0)
 	    micron_log_facility = facility;
-	pthread_create(&log_tid, NULL, thr_syslog, micron_log_dev);
+	open_logger(micron_log_dev);
+	pthread_create(&log_tid, NULL, thr_syslog, NULL);
     }
     pthread_mutex_unlock(&log_queue_mutex);
 }
@@ -397,9 +400,8 @@ static void *
 thr_syslog(void *ptr)
 {
     int rc;
-    
+
     pthread_mutex_lock(&log_queue_mutex);
-    open_logger((char const *)ptr);
     while (1) {
 	struct log_message *msg;
 

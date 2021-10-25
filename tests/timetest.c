@@ -229,13 +229,12 @@ main(int argc, char **argv)
     if (print) {
 	for (i = optind; i < argc; i++) {
 	    printf("%s:\n", argv[i]);
-	    ent.dsem = MICRON_DAY_STRICT;
+	    ent.dsem = dsem;
 	    rc = micron_parse(argv[i], &endp, &ent);
 	    if (rc) {
 		fprintf(stderr, "%s at %s\n", micron_strerror(rc), endp);
 		return 1;
 	    }
-	    ent.dsem = dsem;
 	    micron_next(&ent, &now, &next);
 	    tmprint(&next);
 	    putchar('\n');
@@ -265,7 +264,7 @@ main(int argc, char **argv)
 	
 	printf("%02d %-6s %-24s ", i, micron_dsem_str[test[i].dsem],
 	       test[i].spec);
-	ent.dsem = MICRON_DAY_STRICT;
+	ent.dsem = test[i].dsem;
 	rc = micron_parse(test[i].spec, &endp, &ent);
 	if (rc) {
 	    printf("FAIL (parse failed: %s at %s)\n",
@@ -281,7 +280,6 @@ main(int argc, char **argv)
 		start = test[i].times[j-1].end;
 	    assert(tmscan(start, &start_time) == 0);
 	    assert(tmscan(test[i].times[j].end, &end_time) == 0);
-	    ent.dsem = test[i].dsem;
 	    micron_next(&ent, &start_time, &next);
 	    if (!tmeq(&next, &end_time)) {
 		pass = 0;

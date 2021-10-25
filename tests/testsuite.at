@@ -1,0 +1,19 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+m4_version_prereq([2.52g])
+AT_TESTED([micrond])
+AT_INIT
+m4_include([parser.at])
+m4_include([next.at])
+m4_include([min.at])
+m4_include([hr.at])
+m4_include([day.at])
+m4_include([dom.at])
+m4_include([dow.at])
+m4_include([mail.at])
+m4_include([vinput.at])
+m4_include([syslog.at])
+m4_include([outfile.at])
