@@ -524,21 +524,7 @@ main(int argc, char **argv)
 
 again:
     c = sigtimedwait(&sigs, NULL, &ts);
-    if (c == -1) {
-	if (errno == EAGAIN && term == 0) {
-	    if (verbose)
-		fprintf(stderr, "%s: terminating child process\n", progname);
-	    kill(pid, SIGTERM);
-	    ts.tv_sec = 5;
-	    ts.tv_nsec = 0;
-	    term = 1;
-	    goto again;
-	} else {
-	    perror("sigtimedwait");
-	    kill(pid, SIGKILL);
-	    retcode = 1;
-	}
-    } else if (c == SIGCHLD) {
+    if (c == SIGCHLD) {
 	int status;
 	
 	wait(&status);
@@ -561,7 +547,21 @@ again:
 	    retcode = 1;
 	}
     } else {
-	retcode = 1;
+	if (c == -1 && errno != EAGAIN) {
+	    perror("sigtimedwait");
+	}	    
+	if (term == 0) {
+	    if (verbose)
+		fprintf(stderr, "%s: terminating child process\n", progname);
+	    kill(pid, SIGTERM);
+	    ts.tv_sec = 5;
+	    ts.tv_nsec = 0;
+	    term = 1;
+	    goto again;
+	} else {
+	    kill(pid, SIGKILL);
+	    retcode = 1;
+	}
     }
 
     if (log_tid) {

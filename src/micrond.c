@@ -550,14 +550,13 @@ main(int argc, char **argv)
 			   thread_info[i].start, NULL);
     }
     
-    /* Unblock only the fatal signals */
+    /* Create a set of signals to wait for */
     sigemptyset(&sigs);
     for (i = 0; fatal_signals[i]; i++) {
 	sigaddset(&sigs, fatal_signals[i]);
     }
-    pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 
-    /* Wait for signal to arrive */
+    /* Wait for a signal to arrive */
     while (1) {
 	sigwait(&sigs, &i);
 	if (i == SIGHUP)
