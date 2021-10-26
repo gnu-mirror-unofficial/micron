@@ -42,11 +42,11 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-static char expout[] = "1609452000\n\
-1609452060\n\
-1609452120\n\
-1609452180\n\
-1609452240\n";
+static char expout[] = "1609459200\n\
+1609459260\n\
+1609459320\n\
+1609459380\n\
+1609459440\n";
 
 int
 main(int argc, char **argv)
@@ -73,6 +73,7 @@ main(int argc, char **argv)
 	    if (dup2(p[1], 1) == -1) {
 		perror("dup2");
 	    } else {
+		setenv("TZ", "GMT", 1);
 		setenv("LD_PRELOAD", argv[1], 1);
 		setenv("FAKETIME", "@2021-01-01 00:00:00 x120", 1);
 		execlp(argv[0], argv[0], NULL);
@@ -102,9 +103,10 @@ main(int argc, char **argv)
 	    n = read(p[0], buf, sizeof(buf));
 	    if (n != sizeof(buf))
 		return 1;
+
 	    if (memcmp(buf, expout, n))
 		return 1;
-	    
+
 	    n = read(p[0], buf, sizeof(buf));
 	    if (n != 0)
 		return 1;
