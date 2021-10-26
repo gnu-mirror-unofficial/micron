@@ -27,3 +27,9 @@ if test -n "$FAKETIME_LIB"; then
        FAKELIB_PRELOAD="$FAKETIME_LIB:$FAKEROOT_LIB"
    fi
 fi
+# Test if libfaketime is working
+if test -n "$FAKELIB_PRELOAD"; then
+    if ! ftt "$FAKELIB_PRELOAD"; then
+	unset FAKELIB_PRELOAD
+    fi
+fi

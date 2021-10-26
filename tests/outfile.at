@@ -39,12 +39,8 @@ micronh -t 5 \
         -gmaster=conf/crontab \
         -gnosystem \
         -gnouser \
-        -gnogroup
-],
-[0],
-[],
-[micrond: [[ERR]] conf not owned by root
-micrond: [[ERR]] conf/crontab not owned by root; ignored
+        -gnogroup 2>&1 |\
+  sed -e '/not owned by root/d'	
 ])
 AT_CHECK([cat logfile],
 [0],

@@ -62,14 +62,16 @@ TESTSUITE_AT = \
  vinput.at\
  syslog.at\
  outfile.at\
- maxinst.at
+ maxinst.at\
+ linecont.at
 
 noinst_PROGRAMS = \
  parsetest\
  timetest\
  logger\
  mockmail\
- micronh
+ micronh\
+ ftt
 
 AM_CPPFLAGS = -I$(top_srcdir)/src $(PTHREAD_CFLAGS)
 

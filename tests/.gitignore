@@ -3,6 +3,7 @@ parsetest
 timetest
 atconfig
 atlocal
+ftt
 micronh
 mockmail
 package.m4

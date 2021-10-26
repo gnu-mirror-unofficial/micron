@@ -19,14 +19,12 @@ micronh -e LD_PRELOAD=$FAKELIB_PRELOAD \
         -e USER=root \
         -- \
         -N -ldebug -gmaster=conf/crontab -gnosystem -gnouser -gnogroup \
-        -m $abs_builddir/mockmail
+        -m $abs_builddir/mockmail 2>&1 | \
+  sed -e '/not owned by root/d'
 ],
 [0],
-[],
 [micrond: [[DEBUG]] rescanning crontabs
 micrond: [[DEBUG]] scanning crongroup master: conf
-micrond: [[ERR]] conf not owned by root
-micrond: [[ERR]] conf/crontab not owned by root; ignored
 micrond: [[INFO]] reading conf/crontab
 micrond: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
 micrond: [[INFO]] running reboot jobs

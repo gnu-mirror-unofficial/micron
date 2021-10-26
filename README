@@ -242,6 +242,54 @@ prefix, e.g.
 Refer to the `INSTALL' document in the source directory for a
 discussion of available options to configure and their effect.
 
+* Testing
+
+To execute tests, run `make check'.  Unit tests (parser and time
+scheduler testsuites) don't require any special software and are
+always enabled.  Tests that involve running the micrond library
+are disabled by default.  These tests require two special loadable
+libraries:
+
+- libfaketime
+    A library that reports modified dates and times.  It is
+    available from <https://github.com/wolfcw/libfaketime>.
+    On debian-based systems it can be installed using
+
+      apt-get install libfaketime
+
+    The library will be placed to
+
+      /usr/lib/x86_64-linux-gnu/faketime/libfaketimeMT.so.1
+      
+- libfakeroot
+    A library that fakes root privileges.  It is not needed
+    when `make check' is run as root, obviously.  The library
+    is available from
+
+      http://ftp.debian.org/debian/pool/main/f/fakeroot/.
+
+    On debian-based systems it can be installed using
+
+      apt-get install libfakeroot
+
+    The library will be placed to
+
+      /usr/lib/x86_64-linux-gnu/libfakeroot/libfakeroot-0.so    
+
+If both libraries are installed, run ./configure with options
+--with-faketime and --with-fakeroot.  Both options take as argument
+the name of the directory, where the corresponding library can be
+found, e.g.:
+
+  ./configure --with-faketime=/usr/lib/x86_64-linux-gnu/faketime \
+              --with-fakeroot=/usr/lib/x86_64-linux-gnu/libfakeroot
+
+Once configured this way, `make check' will also run tests in which
+micrond binary is involved.  Notice, that for obvious reasons these
+take some time to execute.  Depending on the nature of test, this time
+ranges between 5 and 28 seconds.  Running all 12 micrond tests takes
+around 1.5 minute.
+
 * The name
 
 It was thought to be a MInimal CRON implementation.  Turned out the

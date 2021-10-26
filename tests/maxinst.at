@@ -23,7 +23,8 @@ micronh -t 4.7 \
         -gnosystem \
         -gnouser \
         -gnogroup 2>&1 | \
-  sed -e 's/(PID [[0-9][0-9]]*)//' \
+  sed -e '/not owned by root/d' \
+      -e 's/(PID [[0-9][0-9]]*)//' \
       -e /signal=/d \
       -e '/sending all cronobs/d' \
       -e 's/ *$//'
@@ -31,8 +32,6 @@ micronh -t 4.7 \
 [0],
 [micrond: 2021-01-01T00:00: [[DEBUG]] rescanning crontabs
 micrond: 2021-01-01T00:00: [[DEBUG]] scanning crongroup master: conf
-micrond: 2021-01-01T00:00: [[ERR]] conf not owned by root
-micrond: 2021-01-01T00:00: [[ERR]] conf/crontab not owned by root; ignored
 micrond: 2021-01-01T00:00: [[INFO]] reading conf/crontab
 micrond: 2021-01-01T00:00: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
 micrond: 2021-01-01T00:00: [[INFO]] running reboot jobs
@@ -65,7 +64,8 @@ micronh -t 6.5 \
         -gnosystem \
         -gnouser \
         -gnogroup 2>&1 | \
-  sed -e 's/(PID [[0-9][0-9]]*)//' \
+  sed -e '/not owned by root/d' \
+      -e 's/(PID [[0-9][0-9]]*)//' \
       -e /signal=/d \
       -e '/sending all cronobs/d' \
       -e 's/ *$//'
@@ -73,8 +73,6 @@ micronh -t 6.5 \
 [0],
 [micrond: 2021-01-01T00:00: [[DEBUG]] rescanning crontabs
 micrond: 2021-01-01T00:00: [[DEBUG]] scanning crongroup master: conf
-micrond: 2021-01-01T00:00: [[ERR]] conf not owned by root
-micrond: 2021-01-01T00:00: [[ERR]] conf/crontab.2 not owned by root; ignored
 micrond: 2021-01-01T00:00: [[INFO]] reading conf/crontab.2
 micrond: 2021-01-01T00:00: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
 micrond: 2021-01-01T00:00: [[INFO]] running reboot jobs
