@@ -3,8 +3,9 @@ parsetest
 timetest
 atconfig
 atlocal
+micronh
 mockmail
 package.m4
-rc
 testsuite
+testsuite.dir
 testsuite.log

@@ -15,18 +15,18 @@ AT_DATA([conf/crontab],
 ])
 
 AT_CHECK([
-rc -t 9.5 \
-   -e LD_PRELOAD=$FAKELIB_PRELOAD \
-   -e FAKETIME="@2021-12-31 23:57:00 x30" \
-   -e FAKETIME_DONT_RESET=1 \
-   -- \
-   -T1 \
-   -N \
-   -ldebug \
-   -gmaster=conf/crontab \
-   -gnosystem \
-   -gnouser \
-   -gnogroup
+micronh -t 9.5 \
+        -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-12-31 23:57:00 x30" \
+        -e FAKETIME_DONT_RESET=1 \
+        -- \
+        -T1 \
+        -N \
+        -ldebug \
+        -gmaster=conf/crontab \
+        -gnosystem \
+        -gnouser \
+        -gnogroup
 ],
 [0],
 [],

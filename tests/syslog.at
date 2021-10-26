@@ -30,19 +30,19 @@ _JOB_SYSLOG_TAG = job_3
 EOT
 ])
 AT_CHECK([
-rc -t 5 \
-   -s $(pwd)/log \
-   -o logfile \
-   -e LD_PRELOAD=$FAKELIB_PRELOAD \
-   -e FAKETIME="@2021-01-01 00:00:00 x60" \
-   -e FAKETIME_DONT_RESET=1 \
-   -- \
-   -N \
-   -lerr \
-   -gmaster=conf/crontab \
-   -gnosystem \
-   -gnouser \
-   -gnogroup
+micronh -t 5 \
+        -s $(pwd)/log \
+        -o logfile \
+        -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-01-01 00:00:00 x60" \
+        -e FAKETIME_DONT_RESET=1 \
+        -- \
+        -N \
+        -lerr \
+        -gmaster=conf/crontab \
+        -gnosystem \
+        -gnouser \
+        -gnogroup
 ],
 [0],
 [],

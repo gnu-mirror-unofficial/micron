@@ -14,20 +14,20 @@ AT_DATA([conf/crontab],
 ])
 
 AT_CHECK([
-rc -t 5.5 \
-   -e LD_PRELOAD=$FAKELIB_PRELOAD \
-   -e FAKETIME="@2020-12-28 00:00:00 x86400" \
-   -e FAKETIME_DONT_RESET=1 \
-   -- \
-   -T2 \
-   -N \
-   -ldebug \
-   -gmaster=conf/crontab \
-   -gnosystem \
-   -gnouser \
-   -gnogroup 2>&1 | \
-   sed -e '/cron shutting down/s/^micrond: .*: /micrond: /' \
-       -e '/exit=0/d'
+micronh -t 5.5 \
+        -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2020-12-28 00:00:00 x86400" \
+        -e FAKETIME_DONT_RESET=1 \
+        -- \
+        -T2 \
+        -N \
+        -ldebug \
+        -gmaster=conf/crontab \
+        -gnosystem \
+        -gnouser \
+        -gnogroup 2>&1 | \
+  sed -e '/cron shutting down/s/^micrond: .*: /micrond: /' \
+      -e '/exit=0/d'
 ],
 [0],
 [micrond: 2020-12-28T00: [[DEBUG]] rescanning crontabs

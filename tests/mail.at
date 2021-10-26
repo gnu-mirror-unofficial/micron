@@ -19,13 +19,13 @@ HOME = $(pwd)
 EOT
 ])
 AT_CHECK([
-rc -e LD_PRELOAD=$FAKELIB_PRELOAD \
-   -e FAKETIME="@2021-01-01 00:00:00" \
-   -e FAKETIME_DONT_RESET=1 \
-   -e USER=root \
-   -- \
-   -N -ldebug -gmaster=conf/crontab -gnosystem -gnouser -gnogroup \
-   -m $abs_builddir/mockmail
+micronh -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-01-01 00:00:00" \
+        -e FAKETIME_DONT_RESET=1 \
+        -e USER=root \
+        -- \
+        -N -ldebug -gmaster=conf/crontab -gnosystem -gnouser -gnogroup \
+        -m $abs_builddir/mockmail
 ],
 [0],
 [],

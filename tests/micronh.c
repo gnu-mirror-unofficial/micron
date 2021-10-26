@@ -1,3 +1,69 @@
+/*
+  NAME
+    micronh - test harness for micrond
+
+  SYNOPSIS
+    micronh [-e NAME=VALUE] [-o FILE] [-s SOCKET] [-t SECONDS] [-v] [-- ARGS]
+
+  DESCRIPTION
+    Micronh starts the micrond daemon in foreground with appropriately
+    constructed command line and waits the given number of SECONDS
+    for it to terminate (SECONDS can be a floating-point number).  When
+    micrond finishes, the harness analyzes its exit status and prints
+    diagnostics.
+
+    The default command line for micrond consists of "-f" option followed by
+    ARGS.  If the -s option is given, the "-p SOCKET" option is inserted after
+    "-f".  In this case the harness starts a syslog server thread listening
+    on the given SOCKET.  The server thread decodes each arrived message and
+    prints it on the standard output (or FILE, if the -o option is given).
+
+  OPTIONS
+    -e NAME=VALUE
+        Set the environment variable NAME to VALUE.  The constructed
+	environment replaces the environment inherited from the parent process.
+	Two variables are always appended to this environment: MICROND_PID,
+	which contains the PID of the started micrond process, and PATH as
+	inherited from the parent.  The latter is appended only if the
+	constructed environment does not contain the PATH variable.
+
+	No more than 16 environment variables can be set.
+	
+    -o FILE
+        When used together with -s, output each decoded syslog message to
+	FILE.
+	
+    -s SOCKET
+        Start the syslog server listening on SOCKET.  If SOCKET starts with
+	a /, a UNIX socket is assumed.  Otherwise, an INET datagram socket
+	is opened.
+
+    -t SECONDS
+        Wait the given number of seconds for micrond to terminate.  If it
+	doesn't exit within that interval, send it the TERM signal.  If it
+	fails to exit within 5 seconds after the TERM signal is delivered,
+	send it the KILL signal.
+
+	SECONDS can be a floating-point number.  It defaults to 10.
+    
+    -v  Increase output verbosity
+    
+  LICENSE
+    Copyright (C) 2020-2021 Sergey Poznyakoff
+
+    This program is free software; you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by the
+    Free Software Foundation; either version 3 of the License, or (at your
+    option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program. If not, see <http://www.gnu.org/licenses/>.    
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -158,6 +224,7 @@ static pthread_t
 start_syslog(char const *dev, char const *outfile)
 {
     pthread_t tid;
+    pthread_attr_t attr;
     union {
 	struct sockaddr_in s_in;
 	struct sockaddr_un s_un;
@@ -249,12 +316,16 @@ start_syslog(char const *dev, char const *outfile)
 	}
     } else
 	b->out = stdout;
-    pthread_create(&tid, NULL, thr_syslog, b);
 
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_create(&tid, &attr, thr_syslog, b);
+    pthread_attr_destroy(&attr);
+    
     return tid;
 }
 
-#define MAX_ENV 16
+#define MAX_ENV 19
 static char *env[MAX_ENV];
 static int nenv = 0;
 
@@ -288,6 +359,7 @@ main(int argc, char **argv)
     char *syslog_socket = NULL;
     char *syslog_output = NULL;
     pthread_t log_tid = 0;
+    int retcode = 0;
     
     progname = argv[0];
     
@@ -464,7 +536,7 @@ again:
 	} else {
 	    perror("sigtimedwait");
 	    kill(pid, SIGKILL);
-	    return 1;
+	    retcode = 1;
 	}
     } else if (c == SIGCHLD) {
 	int status;
@@ -474,7 +546,7 @@ again:
 	    status = WEXITSTATUS(status);
 	    if (status == 127) {
 		fprintf(stderr, "%s: can't run %s\n", progname, xargv[0]);
-		return 1;
+		retcode = 1;
 	    } else if (status != 0) {
 		fprintf(stderr, "%s: %s exited with status %d\n",
 			progname, xargv[0], status);
@@ -482,15 +554,19 @@ again:
 	} else if (WIFSIGNALED(status)) {
 	    fprintf(stderr, "%s: %s terminated on signal %d\n",
 		    progname, xargv[0], WTERMSIG(status));
-	    return 1;
+	    retcode = 1;
 	} else {
 	    fprintf(stderr, "%s: %s terminated with unknown status %d\n",
 		    progname, xargv[0], status);
-	    return 1;
+	    retcode = 1;
 	}
     } else {
-	return 1;
+	retcode = 1;
+    }
+
+    if (log_tid) {
+	pthread_cancel(log_tid);
     }
     
-    return 0;
+    return retcode;
 }

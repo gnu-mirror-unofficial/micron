@@ -1,0 +1,98 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the Makefile.am
+# file in the parent directory.
+AT_SETUP([Max. instances])
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+AT_CHECK([mkdir conf])
+AT_DATA([conf/crontab],
+[MAILTO = ''
+* * * * *	root	sleep 90
+])
+AT_CHECK([
+micronh -t 4.7 \
+        -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-01-01 00:00:00 x60" \
+        -e FAKETIME_DONT_RESET=1 \
+        -- \
+        -N \
+	-T1 \
+        -ldebug \
+        -gmaster=conf/crontab \
+        -gnosystem \
+        -gnouser \
+        -gnogroup 2>&1 | \
+  sed -e 's/(PID [[0-9][0-9]]*)//' \
+      -e /signal=/d \
+      -e '/sending all cronobs/d' \
+      -e 's/ *$//'
+],
+[0],
+[micrond: 2021-01-01T00:00: [[DEBUG]] rescanning crontabs
+micrond: 2021-01-01T00:00: [[DEBUG]] scanning crongroup master: conf
+micrond: 2021-01-01T00:00: [[ERR]] conf not owned by root
+micrond: 2021-01-01T00:00: [[ERR]] conf/crontab not owned by root; ignored
+micrond: 2021-01-01T00:00: [[INFO]] reading conf/crontab
+micrond: 2021-01-01T00:00: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: 2021-01-01T00:00: [[INFO]] running reboot jobs
+micrond: 2021-01-01T00:01: [[DEBUG]] running "sleep 90" on behalf of 0.0
+micrond: 2021-01-01T00:02: [[DEBUG]] running "sleep 90" on behalf of 0.0
+micrond: 2021-01-01T00:02: [[ERR]] won't start "sleep 90": previous instance is still running
+micrond: 2021-01-01T00:02: [[DEBUG]] exit=0, command="sleep 90"
+micrond: 2021-01-01T00:03: [[DEBUG]] running "sleep 90" on behalf of 0.0
+micrond: 2021-01-01T00:04: [[DEBUG]] running "sleep 90" on behalf of 0.0
+micrond: 2021-01-01T00:04: [[ERR]] won't start "sleep 90": previous instance is still running
+micrond: 2021-01-01T00:04: [[DEBUG]] exit=0, command="sleep 90"
+micrond: 2021-01-01T00:04: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+
+AT_DATA([conf/crontab.2],
+[MAILTO = ''
+_MICRON_MAXINSTANCES = 2
+* * * * *	root	sleep 150
+])
+AT_CHECK([
+micronh -t 6.5 \
+        -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-01-01 00:00:00 x60" \
+        -e FAKETIME_DONT_RESET=1 \
+        -- \
+        -N \
+	-T1 \
+        -ldebug \
+        -gmaster=conf/crontab.2 \
+        -gnosystem \
+        -gnouser \
+        -gnogroup 2>&1 | \
+  sed -e 's/(PID [[0-9][0-9]]*)//' \
+      -e /signal=/d \
+      -e '/sending all cronobs/d' \
+      -e 's/ *$//'
+],
+[0],
+[micrond: 2021-01-01T00:00: [[DEBUG]] rescanning crontabs
+micrond: 2021-01-01T00:00: [[DEBUG]] scanning crongroup master: conf
+micrond: 2021-01-01T00:00: [[ERR]] conf not owned by root
+micrond: 2021-01-01T00:00: [[ERR]] conf/crontab.2 not owned by root; ignored
+micrond: 2021-01-01T00:00: [[INFO]] reading conf/crontab.2
+micrond: 2021-01-01T00:00: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: 2021-01-01T00:00: [[INFO]] running reboot jobs
+micrond: 2021-01-01T00:01: [[DEBUG]] running "sleep 150" on behalf of 0.0
+micrond: 2021-01-01T00:02: [[DEBUG]] running "sleep 150" on behalf of 0.0
+micrond: 2021-01-01T00:02: [[WARNING]] starting "sleep 150": 1 instances already running
+micrond: 2021-01-01T00:03: [[DEBUG]] running "sleep 150" on behalf of 0.0
+micrond: 2021-01-01T00:03: [[ERR]] won't start "sleep 150": 2 instances already running
+micrond: 2021-01-01T00:03: [[DEBUG]] exit=0, command="sleep 150"
+micrond: 2021-01-01T00:04: [[DEBUG]] running "sleep 150" on behalf of 0.0
+micrond: 2021-01-01T00:04: [[WARNING]] starting "sleep 150": 1 instances already running
+micrond: 2021-01-01T00:04: [[DEBUG]] exit=0, command="sleep 150"
+micrond: 2021-01-01T00:05: [[DEBUG]] running "sleep 150" on behalf of 0.0
+micrond: 2021-01-01T00:05: [[WARNING]] starting "sleep 150": 1 instances already running
+micrond: 2021-01-01T00:06: [[DEBUG]] running "sleep 150" on behalf of 0.0
+micrond: 2021-01-01T00:06: [[ERR]] won't start "sleep 150": 2 instances already running
+micrond: 2021-01-01T00:06: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+
+AT_CLEANUP
+

@@ -14,18 +14,18 @@ AT_DATA([conf/crontab],
 ])
 
 AT_CHECK([
-rc -t 5.5 \
-   -e LD_PRELOAD=$FAKELIB_PRELOAD \
-   -e FAKETIME="@2021-12-31 21:00:00 x3600" \
-   -e FAKETIME_DONT_RESET=1 \
-   -- \
-   -T1 \
-   -N \
-   -ldebug \
-   -gmaster=conf/crontab \
-   -gnosystem \
-   -gnouser \
-   -gnogroup 2>&1 | \
+micronh -t 5.5 \
+        -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-12-31 21:00:00 x3600" \
+        -e FAKETIME_DONT_RESET=1 \
+        -- \
+        -T1 \
+        -N \
+        -ldebug \
+        -gmaster=conf/crontab \
+        -gnosystem \
+        -gnouser \
+        -gnogroup 2>&1 | \
    sed -e '/cron shutting down/s/^micrond: .*: /micrond: /' \
        -e '/exit=0/d'
 ],

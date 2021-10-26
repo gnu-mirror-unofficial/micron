@@ -15,7 +15,15 @@ if test -n "$FAKEROOT_LIBDIR"; then
 	FAKEROOT_LIB="$FAKEROOT_LIBDIR/libfakeroot-0.so"
     fi
 fi
-
-if test -n "$FAKETIME_LIB" -a -n "$FAKEROOT_LIB"; then
-    FAKELIB_PRELOAD="$FAKETIME_LIB:$FAKEROOT_LIB"
+if test -n "$FAKETIME_LIB"; then
+   if id -u >/dev/null 2>&1; then
+       test "$(id -u)" -eq 0
+   else
+       test -w /
+   fi
+   if test $? -eq 0; then
+       FAKELIB_PRELOAD="$FAKETIME_LIB"
+   elif test -n "$FAKEROOT_LIB"; then
+       FAKELIB_PRELOAD="$FAKETIME_LIB:$FAKEROOT_LIB"
+   fi
 fi

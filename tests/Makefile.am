@@ -61,18 +61,19 @@ TESTSUITE_AT = \
  mail.at\
  vinput.at\
  syslog.at\
- outfile.at
+ outfile.at\
+ maxinst.at
 
 noinst_PROGRAMS = \
  parsetest\
  timetest\
  logger\
  mockmail\
- rc
+ micronh
 
 AM_CPPFLAGS = -I$(top_srcdir)/src $(PTHREAD_CFLAGS)
 
 parsetest_LDADD = ../src/libmicron.a $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 timetest_LDADD = ../src/libmicron.a $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 logger_LDADD = ../src/libmicron.a $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
-rc_LDADD = $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
+micronh_LDADD = $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
