@@ -1,3 +1,6 @@
+# Makefile for the Micron documentation.
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+# For copying conditions, see the file configure.ac in the parent directory.
 dist_man_MANS   = micrond.8 crontab.1 crontab.5
 info_TEXINFOS   = micron.texi
 micron_TEXINFOS = fdl.texi

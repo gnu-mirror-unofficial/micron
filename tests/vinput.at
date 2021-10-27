@@ -1,8 +1,8 @@
 # This file is part of Micron testsuite. -*- autotest -*-
 # Copyright (C) 2020-2021 Sergey Poznyakoff
 #
-# This file is distributed under the same license as the Makefile.am
-# file in the parent directory.
+# This file is distributed under the same license as the testsuite.at
+# file in this directory.
 AT_SETUP([Vixie-style input])
 AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
 AT_CHECK([mkdir conf])
