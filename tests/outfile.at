@@ -42,7 +42,11 @@ micronh -t 5 \
         -gnogroup 2>&1 |\
   sed -e '/not owned by root/d'	
 ])
-AT_CHECK([cat logfile],
+AT_CHECK([
+# Depending on the exact timing, the @reboot job can be reported as started
+# at 00:00:00 or 00:01:00.  To fix the ambiguity, replace the timestamps
+# at lines 1 and 3.
+sed -e ['1,3s/^\([0-9-]*T[0-9][0-9]\):[0-9][0-9]:[0-9][0-9]:/\1:00:00:/'] logfile],
 [0],
 [2021-01-01T00:00:00: conf/crontab:3(echo) output begins
 Cron started

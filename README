@@ -252,14 +252,14 @@ libraries:
 
 - libfaketime
     A library that reports modified dates and times.  It is
-    available from <https://github.com/wolfcw/libfaketime>.
-    On debian-based systems it can be installed using
+    available from
 
-      apt-get install libfaketime
+      https://github.com/wolfcw/libfaketime
 
-    The library will be placed to
-
-      /usr/lib/x86_64-linux-gnu/faketime/libfaketimeMT.so.1
+    You will need version 0.9.8 or newer.  Notice, that although
+    debian-based systems provide libfaketime as a package, the
+    packaged version is (at the time of this writing) outdated and
+    cannot be used for micron testsuite.
       
 - libfakeroot
     A library that fakes root privileges.  It is not needed
