@@ -424,7 +424,7 @@ variables prefixed with @samp{_MICRON_} affect all commands that
 follow them, until another assignment of the same variable is
 encountered or the end of the file is reached.  A default value can
 be assigned to a built-in variable from the command line, using the
-@option{-o} option (@pxref{crontab options}).
+@option{-v} option (@pxref{initial value}).
 
 @defvr {Built-in variable} _MICRON_OUTFILE_FACILITY
 @defvrx {Built-in variable} _JOB_OUTFILE_FACILITY
@@ -796,26 +796,6 @@ and @code{emerg}.
 @item -m @var{mailer}
 Set the mailer command.  Default is @command{/usr/sbin/sendmail -oi -t}.
 
-@anchor{crontab options}
-@opindex -o
-@item -o @var{options}
-Set crontab options, i.e. initial values for built-in variables.  The
-argument is a comma-delimited list of variable assignments, e.g.
-
-@example
--o syslog_facility=daemon,day_semantics=vixie
-@end example
-
-Each assignment is the name of a @command{micrond} built-in variable
-(@pxref{built-in variables}) without prefix (case-insensitive),
-followed by an equals sign and its initial value.  Thus, the option
-shown above defines the following two built-in variables:
-
-@example
-_MICRON_SYSLOG_FACILITY = daemon
-_MICRON_DAY_SEMANTICS = vixie
-@end example
-
 @opindex -p
 @item -p @var{socket}
 Send messages to syslog via this socket.  The argument is either an
@@ -833,7 +813,7 @@ printing them to the standard error.  Not to be confused with the
 @opindex -s
 @item -s
 Log output from cronjobs to syslog.  By default, the @samp{cron}
-facility is used.  Use the @option{-o syslog_facility=@var{f}} option
+facility is used.  Use the @option{-v syslog_facility=@var{f}} option
 to change it to facility @var{f}.
 
 @opindex -T
@@ -852,9 +832,29 @@ them the @code{SIGKILL} signal.
 
 The default timeout is 60 seconds.
 
-@opindex -v
-@item -v
+@opindex -V
+@item -V
 Print program version, licensing information and exit.
+
+@anchor{initial value}
+@cindex initial value of a built-in variable
+@cindex built-in variable, initial value
+@opindex -v
+@item -v @var{name}=@var{value}
+Assigns initial value for the @command{micrond} internal variable
+@var{name} (@pxref{built-in variables}).  The variable name must be
+used without prefix.  Comparison is case-insensitive.  For example:
+
+@example
+-v syslog_facility=daemon
+@end example
+
+@noindent
+is equivalent to
+
+@example
+_MICRON_SYSLOG_FACILITY = daemon
+@end example
 
 @opindex -W
 @item -W @var{opt}

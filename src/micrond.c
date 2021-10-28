@@ -147,7 +147,7 @@ static struct cronjob_options micron_options = {
     .output_type = cronjob_output_mail
 };    
 
-static void set_crontab_options(char *str);
+static void builtin_initialize(char *str);
 
 static int crongroup_init(struct crongroup *cgrp);
 static int crongroup_parse(struct crongroup *cgrp, int ifmod);
@@ -282,7 +282,7 @@ crongroup_option(char const *arg)
 static void
 usage(void)
 {
-    printf("usage: %s [-fhNSsv] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-o OPTS] [-p DEV]\n", progname);
+    printf("usage: %s [-fhNSsVv] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-p DEV] [-v NAME=VALUE] [-W OPT]\n", progname);
     printf("A cron deamon\n");
     printf("\nOPTIONS:\n\n");
     printf("    -F FACILITY     log cronjobs output to this facility (implies -s)\n");
@@ -292,7 +292,6 @@ usage(void)
     printf("    -l PRI          log only messages with syslog priority PRI or higher\n");
     printf("    -m MAILER       set mailer command\n");
     printf("    -N              disable safety checking (for debugging only!)\n");
-    printf("    -o OPTS         set crontab options\n");
     printf("    -P FILE         write the PID of the cron daemon to FILE\n");
     printf("    -p SOCKET       send messages to syslog via this SOCKET\n");
     printf("    -S              log to syslog even if running in foreground\n");
@@ -303,13 +302,13 @@ usage(void)
     printf("    -t SECONDS      time to wait for the cronjobs to terminate after\n"
 	   "                    sending them the SIGTERM signal before stopping\n"
 	   "                    micrond\n");
-    printf("\n");
-    printf("    -h              print this help text\n");
-    printf("    -v              print program version and exit\n");
+    printf("    -v NAME=VALUE   assign initial VALUE to the internal variable NAME\n");
     printf("    -W OPT          set cron option\n");
     printf("\n");
+    printf("    -h              print this help text\n");
+    printf("    -V              print program version and exit\n");
+    printf("\n");
     printf("Valid crontab groups are: master, system, user, and group.\n\n");
-    printf("OPTS is a comma-separated list of crontab options.\n\n");
     printf("Syslog SOCKET can be either an absolute name of a UNIX socket or\n");
     printf("a host name or IPv4 address optionally followed by a colon and port\n");
     printf("number or service name.\n");
@@ -379,8 +378,8 @@ main(int argc, char **argv)
     static int nthr = sizeof(thread_info) / sizeof(thread_info[0]);
     
     set_progname(argv[0]);
-    
-    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:SsT:t:vW:")) != EOF) {
+
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:SsT:t:Vv:W:")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -409,9 +408,13 @@ main(int argc, char **argv)
 	case 'f':
 	    foreground = 1;
 	    break;
-
+	    
 	case 'o':
-	    set_crontab_options(optarg);
+	    micron_logger(LOG_WARNING,
+			  "the -o option is discouraged, use -v instead");
+	    /* fall through */
+	case 'v':
+	    builtin_initialize(optarg);
 	    break;
 
 	case 'P':
@@ -456,7 +459,7 @@ main(int argc, char **argv)
 	    break;
 	}
 	    
-	case 'v':
+	case 'V':
 	    version();
 	    exit(EXIT_OK);
 
@@ -2017,7 +2020,7 @@ parse_env(char *def, size_t len, char *value,
 }
 
 static struct vardef const *
-vardef_locate(char const *str, char **start)
+vardef_builtin_locate(char const *str, char **start)
 {
     struct vardef *vd;
     for (vd = vardef; vd->name; vd++) {
@@ -2031,23 +2034,19 @@ vardef_locate(char const *str, char **start)
 }
 
 static void
-set_crontab_options(char *str)
+builtin_initialize(char *str)
 {
-    char *p;
-    
-    for (p = strtok(str, ","); p; p = strtok(NULL, ",")) {
-	struct vardef const *vd;
-	char *start, *errmsg;
+    struct vardef const *vd;
+    char *start, *errmsg;
 
-	if ((vd = vardef_locate(p, &start)) == NULL) {
-	    micron_log(LOG_ERR, "unknown option: %s", p);
-	    exit(EXIT_USAGE);
-	}
+    if ((vd = vardef_builtin_locate(str, &start)) == NULL) {
+	micron_log(LOG_ERR, "unknown variable: %s", str);
+	exit(EXIT_USAGE);
+    }
 
-	if (vd->setval(start, &micron_options, &errmsg)) {
-	    micron_log(LOG_ERR, "%s: %s", p, errmsg);
-	    exit(EXIT_USAGE);
-	}
+    if (vd->setval(start, &micron_options, &errmsg)) {
+	micron_log(LOG_ERR, "%s: %s", str, errmsg);
+	exit(EXIT_USAGE);
     }
 }
 

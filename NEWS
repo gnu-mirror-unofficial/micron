@@ -17,6 +17,15 @@ built-in variables.
 Writes PID of the running process to FILE.  The file will be removed
 when the program terminates.
 
+* Option -v replaces -o
+
+To set initial value of a built-in variable, use the "-v NAME=VALUE"
+option.
+
+* The -V option
+
+To obtain the micrond version, use the -V option.
+
 * Bugfixes
 
 ** Fix allocation of environment and built-in variables defined in crontabs.

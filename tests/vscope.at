@@ -94,7 +94,7 @@ micronh -e LD_PRELOAD=$FAKELIB_PRELOAD \
         -- \
         -N -ldebug -gmaster=conf/crontab -gsystem=conf/cron.d -gnouser -gnogroup \
         -m $abs_builddir/mockmail \
-	-o mailto=admin	2>&1 | \
+	-v mailto=admin	2>&1 | \
   sed -e '/not owned by root/d'
 ],
 [0],
