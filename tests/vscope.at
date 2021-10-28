@@ -1,0 +1,151 @@
+# This file is part of Micron testsuite. -*- autotest -*-
+# Copyright (C) 2020-2021 Sergey Poznyakoff
+#
+# This file is distributed under the same license as the testsuite.at
+# file in this directory.
+AT_SETUP([Variable scope])
+AT_SKIP_IF([test -z "$FAKELIB_PRELOAD"])
+AT_CHECK([mkdir conf conf/cron.d])
+AT_DATA([conf/crontab],
+[1 * * * *	root	echo First minute
+MAILTO = operator
+2 * * * *	root	echo Second minute
+_JOB_MAILTO = gray
+3 * * * *       root	echo Third minute
+4 * * * *	root	echo Fourth minute
+MAILTO = daemon
+5 * * * *	root	echo Fifth minute
+])
+AT_DATA([conf/cron.d/5],
+[6 * * * *	root	echo Sixth minute
+MAILTO = users
+7 * * * *	root	echo Seventh minute
+])
+AT_CHECK([
+micronh -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-01-01 00:00:00 x60" \
+        -e FAKETIME_DONT_RESET=1 \
+        -e USER=root \
+	-e MAIL_DUMP_APPEND=1 \
+	-t 8 \
+        -- \
+        -N -ldebug -gmaster=conf/crontab -gsystem=conf/cron.d -gnouser -gnogroup \
+        -m $abs_builddir/mockmail 2>&1 | \
+  sed -e '/not owned by root/d'
+],
+[0],
+[micrond: [[DEBUG]] rescanning crontabs
+micrond: [[DEBUG]] scanning crongroup master: conf
+micrond: [[INFO]] reading conf/crontab
+micrond: [[DEBUG]] scanning crongroup system: conf/cron.d
+micrond: [[INFO]] reading conf/cron.d/5
+micrond: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: [[INFO]] running reboot jobs
+micrond: [[DEBUG]] running "echo First minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo First minute"
+micrond: [[DEBUG]] command="echo First minute", mailing output to root
+micrond: [[DEBUG]] running "echo Second minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Second minute"
+micrond: [[DEBUG]] command="echo Second minute", mailing output to operator
+micrond: [[DEBUG]] running "echo Third minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Third minute"
+micrond: [[DEBUG]] command="echo Third minute", mailing output to gray
+micrond: [[DEBUG]] running "echo Fourth minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Fourth minute"
+micrond: [[DEBUG]] command="echo Fourth minute", mailing output to operator
+micrond: [[DEBUG]] running "echo Fifth minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Fifth minute"
+micrond: [[DEBUG]] command="echo Fifth minute", mailing output to daemon
+micrond: [[DEBUG]] running "echo Sixth minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Sixth minute"
+micrond: [[DEBUG]] command="echo Sixth minute", mailing output to root
+micrond: [[DEBUG]] running "echo Seventh minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Seventh minute"
+micrond: [[DEBUG]] command="echo Seventh minute", mailing output to users
+micrond: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+AT_CHECK([sed -n -e '/To:/p' -e '/Subject:/p' mail.dump
+],
+[0],
+[To: root
+Subject: Cron <root@begemot> echo First minute
+To: operator
+Subject: Cron <root@begemot> echo Second minute
+To: gray
+Subject: Cron <root@begemot> echo Third minute
+To: operator
+Subject: Cron <root@begemot> echo Fourth minute
+To: daemon
+Subject: Cron <root@begemot> echo Fifth minute
+To: root
+Subject: Cron <root@begemot> echo Sixth minute
+To: users
+Subject: Cron <root@begemot> echo Seventh minute
+])
+
+AT_CHECK([
+micronh -e LD_PRELOAD=$FAKELIB_PRELOAD \
+        -e FAKETIME="@2021-01-01 00:00:00 x60" \
+        -e FAKETIME_DONT_RESET=1 \
+        -e USER=root \
+	-e MAIL_DUMP=mail2.dump \
+	-e MAIL_DUMP_APPEND=1 \
+	-t 8 \
+        -- \
+        -N -ldebug -gmaster=conf/crontab -gsystem=conf/cron.d -gnouser -gnogroup \
+        -m $abs_builddir/mockmail \
+	-o mailto=admin	2>&1 | \
+  sed -e '/not owned by root/d'
+],
+[0],
+[micrond: [[DEBUG]] rescanning crontabs
+micrond: [[DEBUG]] scanning crongroup master: conf
+micrond: [[INFO]] reading conf/crontab
+micrond: [[DEBUG]] scanning crongroup system: conf/cron.d
+micrond: [[INFO]] reading conf/cron.d/5
+micrond: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: [[INFO]] running reboot jobs
+micrond: [[DEBUG]] running "echo First minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo First minute"
+micrond: [[DEBUG]] command="echo First minute", mailing output to admin
+micrond: [[DEBUG]] running "echo Second minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Second minute"
+micrond: [[DEBUG]] command="echo Second minute", mailing output to operator
+micrond: [[DEBUG]] running "echo Third minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Third minute"
+micrond: [[DEBUG]] command="echo Third minute", mailing output to gray
+micrond: [[DEBUG]] running "echo Fourth minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Fourth minute"
+micrond: [[DEBUG]] command="echo Fourth minute", mailing output to operator
+micrond: [[DEBUG]] running "echo Fifth minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Fifth minute"
+micrond: [[DEBUG]] command="echo Fifth minute", mailing output to daemon
+micrond: [[DEBUG]] running "echo Sixth minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Sixth minute"
+micrond: [[DEBUG]] command="echo Sixth minute", mailing output to admin
+micrond: [[DEBUG]] running "echo Seventh minute" on behalf of 0.0
+micrond: [[DEBUG]] exit=0, command="echo Seventh minute"
+micrond: [[DEBUG]] command="echo Seventh minute", mailing output to users
+micrond: [[NOTICE]] cron shutting down on signal "Terminated"
+])
+AT_CHECK([sed -n -e '/To:/p' -e '/Subject:/p' mail2.dump
+],
+[0],
+[To: admin
+Subject: Cron <root@begemot> echo First minute
+To: operator
+Subject: Cron <root@begemot> echo Second minute
+To: gray
+Subject: Cron <root@begemot> echo Third minute
+To: operator
+Subject: Cron <root@begemot> echo Fourth minute
+To: daemon
+Subject: Cron <root@begemot> echo Fifth minute
+To: admin
+Subject: Cron <root@begemot> echo Sixth minute
+To: users
+Subject: Cron <root@begemot> echo Seventh minute
+])
+
+AT_CLEANUP
+

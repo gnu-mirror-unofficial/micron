@@ -74,7 +74,8 @@ TESTSUITE_AT = \
  syslog.at\
  outfile.at\
  maxinst.at\
- linecont.at
+ linecont.at\
+ vscope.at
 
 noinst_PROGRAMS = \
  parsetest\

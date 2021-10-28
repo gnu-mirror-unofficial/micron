@@ -19,6 +19,7 @@ AT_INIT
 m4_include([parser.at])
 m4_include([next.at])
 m4_include([linecont.at])
+m4_include([vscope.at])
 m4_include([min.at])
 m4_include([hr.at])
 m4_include([day.at])

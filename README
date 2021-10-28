@@ -287,8 +287,8 @@ found, e.g.:
 Once configured this way, `make check' will also run tests in which
 micrond binary is involved.  Notice, that for obvious reasons these
 take some time to execute.  Depending on the nature of test, this time
-ranges between 5 and 28 seconds.  Running all 12 micrond tests takes
-around 1.5 minute.
+ranges between 5 and 28 seconds.  Running all 14 micrond tests takes
+slighly more than 2 minutes.
 
 * The name
 

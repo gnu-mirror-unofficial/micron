@@ -1272,12 +1272,12 @@ cronjob_arm(struct cronjob *job, int apply_now)
 }
 
 struct crontab {
-    unsigned fileid;
-    struct crongroup *crongroup;
-    char *filename;
-    struct list_head list;
-    time_t mtime;
-    struct list_head env_head;
+    unsigned fileid;              /* Crontab identifier. */
+    struct crongroup *crongroup;  /* Crongroup it belongs to. */
+    char *filename;               /* Crontab file name. */
+    struct list_head list;        /* Links to neighbor crontabs in the list. */
+    time_t mtime;                 /* Modification time. */
+    struct list_head env_head;    /* Environment. */
 };
 
 static struct list_head crontabs = LIST_HEAD_INITIALIZER(crontabs);
@@ -1656,20 +1656,41 @@ copy_unquoted(char *dst, char const *src)
     return 0;
 }
 
+static struct cronjob_options *
+cronjob_options_dup(struct cronjob_options const *orig)
+{
+    struct cronjob_options *opt = calloc(1, sizeof(*opt));
+
+    if (!opt) {
+	micron_log(LOG_ERR, "out of memory");
+	return NULL;
+    }
+    *opt = *orig;
+    opt->perjob = 0;
+    opt->prev = NULL;
+    string_ref(opt->mailto);
+    string_ref(opt->syslog_tag);
+    string_ref(opt->outfile);
+    return opt;
+}
+
+static void
+cronjob_options_free(struct cronjob_options *opt)
+{
+    string_free(opt->mailto);
+    string_free(opt->syslog_tag);
+    string_free(opt->outfile);
+    free(opt);
+}
+
 static int
 cronjob_options_ref(struct cronjob_options **popt)
 {
     if (!(*popt)->perjob) {
-	struct cronjob_options *opt = calloc(1, sizeof(*opt));
-	if (!opt) {
-	    micron_log(LOG_ERR, "out of memory");
+	struct cronjob_options *opt = cronjob_options_dup(*popt);
+	if (!opt)
 	    return -1;
-	}
-	*opt = **popt;
 	opt->perjob = 1;
-	string_ref(opt->mailto);
-	string_ref(opt->syslog_tag);
-	string_ref(opt->outfile);
 	opt->prev = *popt;
 	*popt = opt;
     }
@@ -1680,12 +1701,9 @@ void
 cronjob_options_unref(struct cronjob_options **popt)
 {
     struct cronjob_options *opt = *popt;
-    string_free(opt->mailto);
-    string_free(opt->syslog_tag);
-    string_free(opt->outfile);
     if (opt->perjob) {
 	*popt = opt->prev;
-	free(opt);
+	cronjob_options_free(opt);
     }
 }
 
@@ -2012,7 +2030,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
     size_t off;
     unsigned line = 0;
     struct cronjob *job;
-    struct cronjob_options options, *opt;
+    struct cronjob_options *opt;
     struct passwd *pwd;
     int env_cont = 1;
     struct micron_environ *env;
@@ -2075,8 +2093,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
     micron_environ_alloc(&cp->env_head);
 
     /* Initialize options */
-    options = micron_options;
-    opt = &options;
+    opt = cronjob_options_dup(&micron_options);
     
     off = 0;
     while (1) {
@@ -2283,7 +2300,8 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	    cronjob_options_ref(&opt);
 	    opt->syslog_tag = string_alloc(len);
 	    if (!opt->syslog_tag) {
-		micron_log(LOG_ERR, PRsCRONTAB ":%u: can't allocate syslog tag",
+		micron_log(LOG_ERR,
+			   PRsCRONTAB ":%u: can't allocate syslog tag",
 			   ARGCRONTAB(cgrp, filename), line);
 		goto next;
 	    } else {
@@ -2307,6 +2325,7 @@ crontab_parse(struct crongroup *cgrp, char const *filename, int ifmod)
 	cronjob_options_unref(&opt);
     }
     cronjob_options_unref(&opt);
+    cronjob_options_free(opt);
     fclose(fp);
     return CRONTAB_MODIFIED;
 }
