@@ -13,7 +13,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH CRONTAB 1 "January 18, 2021" "CRONTAB" "General Commands Manual"
+.TH CRONTAB 1 "October 28, 2021" "CRONTAB" "General Commands Manual"
 .SH NAME
 crontab \- manipulate per-user and user-group crontabs 
 .SH SYNOPSIS
@@ -33,6 +33,8 @@ crontab \- manipulate per-user and user-group crontabs
  \fIFILE\fR
 .br
 \fBcrontab\fR \fB\-h\fR
+.br
+\fBcrontab\fR \fB\-V\fR
 .SH DESCRIPTION
 Allows the user to list, edit or remove personal or group crontabs.
 .PP
@@ -109,13 +111,13 @@ Operate on user cron group files.
 \fB\-u \fINAME\fR
 Operate on crontab of user \fINAME\fR.
 .TP
-.B \-v
+.B \-V
 Print program version, licensing information and exit.
 .SH SEE ALSO
 .BR micrond (8),
 .BR crontab (5).
 .SH COPYRIGHT
-Copyright \(co 2020 Sergey Poznyakoff <gray@gnu.org>
+Copyright \(co 2020\-2021 Sergey Poznyakoff <gray@gnu.org>
 .br
 .na
 License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>

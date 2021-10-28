@@ -13,19 +13,20 @@
 .\"
 .\" You should have received a copy of the GNU General Public License along
 .\" with micron. If not, see <http://www.gnu.org/licenses/>. */
-.TH MICROND 8 "May 6, 2021" "MICROND" "System Manager's Manual"
+.TH MICROND 8 "October 28, 2021" "MICROND" "System Manager's Manual"
 .SH NAME
 micrond \- a minimal cron implementation
 .SH SYNOPSIS
 \fBmicrond\fR\
- [\fB\-fhNSsv\fR]\
+ [\fB\-fhNSsV\fR]\
  [\fB\-g \fR[\fBno\fR]\fIGROUP\fR[\fB=\fIDIR\fR]]\
  [\fB\-l \fIPRI\fR]\
  [\fB\-m \fIMAILER\fR]\
- [\fB\-o \fIOPTIONS\fR]\
  [\fB\-P \fIFILE\fR]\
  [\fB\-p \fIDEV\fR]\
- [\fB\-t \fISECONDS\fR]
+ [\fB\-t \fISECONDS\fR]\
+ [\fB\-v \fINAME\fB=\fIVALUE\fR]\
+ [\fB\-W \fIOPTION\fR]
 .SH DESCRIPTION
 Micrond executes commands periodically as directed by one or more
 \fIcrontabs\fR.  Each crontab is a plain text file, where each
@@ -155,49 +156,6 @@ arguments in order of increasing priority:
 \fB\-m \fIMAILER\fR
 Set mailer command.  Default is ``/usr/sbin/sendmail -oi -t''.
 .TP
-\fB\-o \fIOPTIONS\fR
-Set crontab options.  \fIOPTIONS\fR is a comma-delimited list of
-assignments, e.g.
-
-  -o syslog_facility=daemon,day_semantics=vixie
-  
-Crontab options control how the crontab entries
-are interpreted and set default values for \fBmicrond\fR built-in
-variables.
-.RS +8
-.TP
-.B syslog_facility
-Syslog facility to use when sending job's output to syslog.  The
-default is "cron".  It can be modified in crontabs using the
-\fB_MICRON_SYSLOG_FACILITY\fR and \fB_JOBS_SYSLOG_FACILITY\fR
-built-ins.
-.br
-Setting this option implies \fB\-s\fR.
-.TP
-.B syslog_tag
-Provides a syslog tag to use when reporting job's output.  See the
-\fB_MICRON_SYSLOG_TAG\fR variable in
-.BR crontab (5).
-.TP
-.B maxinstances
-Maximum number of cronjob instances that can be run simultaneously.
-Default is 1.  See the \fB_MICRON_MAXINSTANCES\fR variable in
-.BR crontab (5).
-.TP
-.B day_semantics
-Defines the day field semantics.  Allowed values are
-.BR strict " (default),"
-.BR vixie ", and"
-.BR dillon .
-Refer to the subsection
-.B "Cron commands"
-in
-.BR crontab (5)
-for a discussion of day field semantics.
-.br
-See also the \fB_MICRON_DAY_SEMANTICS\fR built-in variable.
-.RE
-.TP
 \fB\-P \fIFILE\fR
 Write the PID of the cron daemon to \fIFILE\fR.  The file will be
 removed when the program terminates.
@@ -227,13 +185,30 @@ within that amount of time are terminated forcibly by sending them the
 .br
 The default timeout is 60 seconds.
 .TP
-.B \-v
+.B \-V
 Print program version, licensing information and exit.
+.TP
+\fB\-v \fINAME\fB=\fIVALUE\fR
+Assigns initial value for the internal variable \fBNAME\fR.
+The variable name must be used without prefix.  Comparison is
+case-insensitive.  For example:
+
+  -v syslog_facility=daemon
+
+.TP
+\fB\-W \fIOPTION\fR
+Sets internal \fBmicrond\fR option.  Currently only one such
+\fIOPTION\fR is implemented: \fBparanoid_memfree\fR.  When 
+\fB\-Wparanoid_memfree\fR is given, \fBmicrond\fR will free all
+allocated memory before terminating.  This option is useful for
+debugging, or when running \fBmicrond\fR under \fBvalgrind\fR or
+another memory leak detector.
+
 .SH SEE ALSO
 .BR crontab (1),
 .BR crontab (5).
 .SH COPYRIGHT
-Copyright \(co 2020 Sergey Poznyakoff <gray@gnu.org>
+Copyright \(co 2020\-2021 Sergey Poznyakoff <gray@gnu.org>
 .br
 .na
 License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>

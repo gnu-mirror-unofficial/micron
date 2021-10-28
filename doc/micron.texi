@@ -1004,8 +1004,8 @@ Remove the crontab.
 @item -u @var{name}
 Operate on crontab of user @var{name}.
 
-@opindex -v
-@item -v
+@opindex -V
+@item -V
 Print program version, licensing information and exit.
 @end table
 

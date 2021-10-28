@@ -143,9 +143,9 @@ usage(int ex)
     fprintf(fp, "    -g              operate on user cron group files\n");
     fprintf(fp, "    -u NAME         operate on crontab of user NAME\n");
     fprintf(fp, "    -h              print this help text\n");
-    fprintf(fp, "    -v              print program version and exit\n");
+    fprintf(fp, "    -V              print program version and exit\n");
     fprintf(fp, "\n");
-    fprintf(fp, "If none of [-elr] options given, replaces the crontab with the"
+    fprintf(fp, "If none of [-ehlrV] options given, replaces the crontab with the"
 	    " content of FILE.\n");
     fprintf(fp, "\n");
     exit(ex);
@@ -178,7 +178,7 @@ main(int argc, char **argv)
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "eghilru:v")) != EOF) {
+    while ((c = getopt(argc, argv, "eghilru:V")) != EOF) {
 	switch (c) {
 	case 'e':
 	    command = C_EDIT;
@@ -208,7 +208,7 @@ main(int argc, char **argv)
 	    username = optarg;
 	    break;
 
-	case 'v':
+	case 'V':
 	    version();
 	    exit(EXIT_USAGE);
 	    
