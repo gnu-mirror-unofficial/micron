@@ -134,6 +134,13 @@ char *pidfile;
 int print_timestamps = -1;
 /* Boolean flag used to filter out @reboot jobs when rescanning. */
 static int running;
+/*
+ * Be paranoid about memory deallocation.  This turns on freeing all
+ * memory before returning from main function, which is normally a
+ * waste of CPU time.
+ */
+static int paranoid_memfree = 0;
+
 static struct cronjob_options micron_options = {
     .dsem = MICRON_DAY_STRICT,
     .maxinstances = 1,
@@ -271,7 +278,7 @@ crongroup_option(char const *arg)
     micron_log(LOG_CRIT, "%s: unknown group name", arg);
     exit(EXIT_USAGE);
 }   
-
+
 static void
 usage(void)
 {
@@ -299,6 +306,7 @@ usage(void)
     printf("\n");
     printf("    -h              print this help text\n");
     printf("    -v              print program version and exit\n");
+    printf("    -W OPT          set cron option\n");
     printf("\n");
     printf("Valid crontab groups are: master, system, user, and group.\n\n");
     printf("OPTS is a comma-separated list of crontab options.\n\n");
@@ -315,6 +323,9 @@ default_stop_thread(pthread_t tid)
     pthread_cancel(tid);
     pthread_join(tid, &res);
 }
+
+static void priv_free_pwdbuf(void);
+void string_free(String s);
 
 int
 main(int argc, char **argv)
@@ -369,7 +380,7 @@ main(int argc, char **argv)
     
     set_progname(argv[0]);
     
-    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:SsT:t:v")) != EOF) {
+    while ((c = getopt(argc, argv, "hg:fNl:m:o:P:p:SsT:t:vW:")) != EOF) {
 	switch (c) {
 	case 'h':
 	    usage();
@@ -448,6 +459,15 @@ main(int argc, char **argv)
 	case 'v':
 	    version();
 	    exit(EXIT_OK);
+
+	case 'W':
+	    if (strcmp(optarg, "paranoid_memfree") == 0) {
+		paranoid_memfree = 1;
+	    } else {
+		micron_logger(LOG_ERR, "unrecognized cron option: %s", optarg);
+		exit(EXIT_USAGE);
+	    }
+	    break;
 	    
 	default:
 	    exit(EXIT_USAGE);
@@ -464,6 +484,7 @@ main(int argc, char **argv)
 				  &crongroups[i].dirname,
 				  &crongroups[i].pattern))
 		    nomem_exit();
+		crongroups[i].flags |= CGF_PATALLOC;
 	    } else {
 		crongroups[i].flags |= CGF_DISABLED;
 		continue;
@@ -577,6 +598,21 @@ main(int argc, char **argv)
 	unlink(pidfile);
     
     micron_log_close();
+
+    if (paranoid_memfree) {
+	for (i = 0; i < NCRONID; i++) {
+	    if (crongroups[i].flags & CGF_PATALLOC) {
+		free(crongroups[i].pattern);
+		free(crongroups[i].dirname);
+	    }
+	}
+
+	string_free(micron_options.mailto);
+	string_free(micron_options.syslog_tag);
+	string_free(micron_options.outfile);
+
+	priv_free_pwdbuf();
+    }
     
     return EXIT_OK;
 }
@@ -1366,9 +1402,11 @@ struct pwdbuf {
 static void
 pwdbuf_free(void *f)
 {
-    struct pwdbuf *sb = f;
-    free(sb->buf);
-    free(sb);
+    if (f) {
+	struct pwdbuf *sb = f;
+	free(sb->buf);
+	free(sb);
+    }
 }
 
 static void
@@ -1419,6 +1457,13 @@ priv_get_pwdbuf(void)
 	pthread_setspecific(pwdbuf_key, sb);
     }
     return sb;
+}
+
+static void
+priv_free_pwdbuf(void)
+{
+    pwdbuf_free(priv_get_pwdbuf());
+    pthread_setspecific(pwdbuf_key, NULL);
 }
 
 static struct passwd *

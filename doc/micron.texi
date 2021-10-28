@@ -855,6 +855,18 @@ The default timeout is 60 seconds.
 @opindex -v
 @item -v
 Print program version, licensing information and exit.
+
+@opindex -W
+@item -W @var{opt}
+@kwindex paranoid_memfree
+Set internal @command{micrond} option.  As of version @value{VERSION},
+only one such option is implemented: @code{paranoid_memfree}.  When
+@option{-Wparanoid_memfree} is given, @command{micrond} will
+meticulously free all allocated memory before terminating.  Normally
+this isn't needed, as the operating system will reclaim that memory
+anyway.  Use this option if you run @command{micrond} under
+@command{valgrind} or another memory leak detector, in order to avoid
+spurious warnings.
 @end table
 
 @node crontab

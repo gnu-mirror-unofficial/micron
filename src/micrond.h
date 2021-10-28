@@ -149,6 +149,8 @@ enum {
 #define CGF_DISABLED 0x1
 /* Group is declared unsafe. */
 #define CGF_UNSAFE   0x2
+/* Pattern and dirname were allocated. */
+#define CGF_PATALLOC 0x4
 
 struct crongroup {
     char const *id;      /* Group ID. */

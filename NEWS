@@ -1,4 +1,4 @@
-micron -- history of user-visible changes. 2021-10-23
+micron -- history of user-visible changes. 2021-10-28
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
@@ -16,6 +16,10 @@ built-in variables.
 
 Writes PID of the running process to FILE.  The file will be removed
 when the program terminates.
+
+* Bugfixes
+
+** Fix allocation of environment and built-in variables defined in crontabs.
 
 Version 1.2, 2021-04-15
 

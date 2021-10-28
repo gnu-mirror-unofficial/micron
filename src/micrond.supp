@@ -9,6 +9,9 @@
 #  --suppressions=micrond.supp
 #  --leak-check=full
 #  --show-leak-kinds=all
+#
+# Instead of using this suppression file, consider running micrond with the
+# -Wparanoid_memfree option.
 
 {
    The base value from parsefilename is never freed in main
