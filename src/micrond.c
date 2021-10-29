@@ -283,7 +283,7 @@ static void
 usage(void)
 {
     printf("usage: %s [-fhNSsVv] [-g [no]GROUP[=DIR]] [-l PRI] [-m MAILER] [-p DEV] [-v NAME=VALUE] [-W OPT]\n", progname);
-    printf("A cron deamon\n");
+    printf("A cron daemon\n");
     printf("\nOPTIONS:\n\n");
     printf("    -F FACILITY     log cronjobs output to this facility (implies -s)\n");
     printf("    -f              remain in foreground\n");
@@ -299,20 +299,21 @@ usage(void)
     printf("    -T N            when logging to stderr, add timestamp (0 - ISO 8601,\n");
     printf("                    1 - ISO 8601 without seconds, 2 - ISO 8601 without seconds\n");
     printf("                    and minutes)\n");
-    printf("    -t SECONDS      time to wait for the cronjobs to terminate after\n"
-	   "                    sending them the SIGTERM signal before stopping\n"
-	   "                    micrond\n");
+    printf("    -t SECONDS      time to wait for cronjobs to terminate after sending them\n");
+    printf("                    the SIGTERM signal\n");
     printf("    -v NAME=VALUE   assign initial VALUE to the internal variable NAME\n");
     printf("    -W OPT          set cron option\n");
     printf("\n");
     printf("    -h              print this help text\n");
     printf("    -V              print program version and exit\n");
     printf("\n");
-    printf("Valid crontab groups are: master, system, user, and group.\n\n");
+    printf("Valid crontab GROUP names are: master, system, user, and group.\n\n");
     printf("Syslog SOCKET can be either an absolute name of a UNIX socket or\n");
     printf("a host name or IPv4 address optionally followed by a colon and port\n");
     printf("number or service name.\n");
     printf("\n");
+    printf("Report bugs to <%s>.\n", PACKAGE_BUGREPORT);
+    printf("Micron home page: <%s>.\n", PACKAGE_URL);	
 }
 
 void

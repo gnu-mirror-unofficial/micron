@@ -295,6 +295,17 @@ slighly more than 2 minutes.
 It was thought to be a MInimal CRON implementation.  Turned out the
 other way.
 
+* Bug reporting.
+
+Send bug reports to <gray@gnu.org.ua>.  Make sure to mention "micron"
+in the subject.
+
+You can also use bug-tracker at
+
+  https://puszcza.gnu.org.ua/bugs/?group=micron
+
+(requires authorization).
+
 * References
 
 The complete micron documentation in varions is available from

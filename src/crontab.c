@@ -146,8 +146,11 @@ usage(int ex)
     fprintf(fp, "    -V              print program version and exit\n");
     fprintf(fp, "\n");
     fprintf(fp, "If none of [-ehlrV] options given, replaces the crontab with the"
-	    " content of FILE.\n");
+	    " content of\n");
+    fprintf(fp, "FILE.\n");
     fprintf(fp, "\n");
+    fprintf(fp, "Report bugs to <%s>.\n", PACKAGE_BUGREPORT);
+    fprintf(fp, "Micron home page: <%s>.\n", PACKAGE_URL);
     exit(ex);
 }
 
