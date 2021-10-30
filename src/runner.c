@@ -592,7 +592,7 @@ stop_thr_cleaner(pthread_t tid)
     /* Send all jobs the TERM signal */
     pthread_mutex_lock(&proctab_mutex);
     if (!list_head_is_empty(&proctab_head)) {
-	micron_log(LOG_DEBUG, "sending all cronobs the SIGTERM signal");
+	micron_log(LOG_DEBUG, "sending all cronjobs the SIGTERM signal");
 	LIST_FOREACH(pt, &proctab_head, link) {
 	    if (pt->pid > 0)
 		kill(pt->pid, SIGTERM);
@@ -607,7 +607,7 @@ stop_thr_cleaner(pthread_t tid)
 
 	/* Forcibly terminate remaining jobs */
 	if (!list_head_is_empty(&proctab_head)) {
-	    micron_log(LOG_DEBUG, "sending all cronobs the SIGKILL signal");
+	    micron_log(LOG_DEBUG, "sending all cronjobs the SIGKILL signal");
 
 	    LIST_FOREACH(pt, &proctab_head, link) {
 		if (pt->pid > 0)

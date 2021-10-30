@@ -109,7 +109,7 @@ struct crongroup crongroups[] = {
 
 struct list_head crongroup_head = LIST_HEAD_INITIALIZER(crongroup_head);
 
-/* Mode argument for crontab parsing founctions */
+/* Mode argument for crontab parsing functions */
 enum {
     PARSE_ALWAYS      = 0x00, /* Always parse the file(s) */
     PARSE_IF_MODIFIED = 0x01, /* Parse the file only if mtime changed or
@@ -340,7 +340,7 @@ main(int argc, char **argv)
 	pthread_t tid;              /* Thread handle. Gets filled when the
 				       thread is created. */
 	/* Each of the function pointers below can be NULL. */
-	void (*init)(void);         /* Initialization funtion.  Called at
+	void (*init)(void);         /* Initialization function.  Called at
 				       startup before creating the thread. */
 	void *(*start)(void *ptr);  /* Thread start routine. */
 	void (*stop) (pthread_t);   /* Function to stop the thread */
