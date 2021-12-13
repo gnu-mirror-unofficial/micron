@@ -3,7 +3,7 @@
     micronh - test harness for micrond
 
   SYNOPSIS
-    micronh [-e NAME=VALUE] [-o FILE] [-s SOCKET] [-t SECONDS] [-v] [-- ARGS]
+    micronh [-e NAME=VALUE] [-o FILE] [-s SOCKET] [-t SECONDS] [-hv] [-- ARGS]
 
   DESCRIPTION
     Micronh starts the micrond daemon in foreground with appropriately
@@ -28,7 +28,9 @@
 	constructed environment does not contain the PATH variable.
 
 	No more than 16 environment variables can be set.
-	
+
+    -h  Display short usage summary and exit.
+    
     -o FILE
         When used together with -s, output each decoded syslog message to
 	FILE.
@@ -89,6 +91,8 @@ usage(void)
     printf("runs micrond command with a timeout.\n");
     printf("\nOPTIONS are:\n\n");
     printf("   -e NAME=VALUE  set environment variable\n");
+    printf("   -o FILE        (used with -s) output each decoded syslog message to FILE\n");
+    printf("   -s SOCKET      start the syslog server listening on SOCKET\n");
     printf("   -t N           set execution timeout to N seconds (default is 10)\n");
     printf("   -v             increase verbosity\n");
     printf("   -h             display this help message\n");

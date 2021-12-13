@@ -1,7 +1,5 @@
 ## Makefile for the Micron documentation.
 ## Copyright (C) 2020-2021 Sergey Poznyakoff
-## Process this file with automake to produce Makefile.in.
-## Copyright (C) 2020-2021 Sergey Poznyakoff
 ##
 ## Micron is free software; you can redistribute it and/or modify it
 ## under the terms of the GNU General Public License as published by the
