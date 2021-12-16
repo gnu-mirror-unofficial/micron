@@ -1,18 +1,18 @@
-# This file is part of Micron testsuite. -*- autotest -*-
+# This file is part of GNU micron testsuite. -*- autotest -*-
 # Copyright (C) 2020-2021 Sergey Poznyakoff
 #
-# Micron is free software; you can redistribute it and/or modify it
+# GNU micron is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
 # Free Software Foundation; either version 3 of the License, or (at your
 # option) any later version.
 #
-# Micron is distributed in the hope that it will be useful,
+# GNU micron is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License along
-# with micron. If not, see <http://www.gnu.org/licenses/>. */
+# with GNU micron. If not, see <http://www.gnu.org/licenses/>. */
 
 AT_SETUP([each minute])
 
@@ -43,7 +43,7 @@ micronh -t 9.5 \
 [micrond: 2021-12-31T23:57: [[DEBUG]] rescanning crontabs
 micrond: 2021-12-31T23:57: [[DEBUG]] scanning crongroup master: conf
 micrond: 2021-12-31T23:57: [[INFO]] reading conf/crontab
-micrond: 2021-12-31T23:57: [[NOTICE]] cron (micron AT_PACKAGE_VERSION) started
+micrond: 2021-12-31T23:57: [[NOTICE]] cron (AT_PACKAGE_STRING) started
 micrond: 2021-12-31T23:57: [[INFO]] running reboot jobs
 micrond: 2021-12-31T23:58: [[DEBUG]] running "echo Run each minute" on behalf of 0.0
 micrond: 2021-12-31T23:58: [[DEBUG]] exit=0, command="echo Run each minute"

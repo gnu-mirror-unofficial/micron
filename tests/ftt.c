@@ -20,7 +20,7 @@
 
   NOTE
     Support for pthread_cond_timedwait appeared in version 0.9.8 of
-    libfaketime (commit fb91c4fcde).  It is crucial for micron testsuite.
+    libfaketime (commit fb91c4fcde).  It is crucial for GNU micron testsuite.
 
   LICENSE
     Copyright (C) 2020-2021 Sergey Poznyakoff

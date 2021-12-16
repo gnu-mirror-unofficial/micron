@@ -1,7 +1,12 @@
-micron -- history of user-visible changes. 2021-10-29
+GNU micron -- history of user-visible changes. 2021-12-16
 See the end of file for copying conditions.
 
 Please send micron bug reports to <gray@gnu.org>
+
+Version 1.3.90 (git)
+
+* Micron is a part of GNU project
+
 
 Version 1.3, 2021-10-29
 

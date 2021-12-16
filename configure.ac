@@ -1,27 +1,27 @@
-# micron - a minimal cron implementation
+# GNU micron - a minimal cron implementation
 # Copyright (C) 2020-2021 Sergey Poznyakoff
 #
-# Micron is free software; you can redistribute it and/or modify it
+# GNU micron is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
 # Free Software Foundation; either version 3 of the License, or (at your
 # option) any later version.
 #
-# Micron is distributed in the hope that it will be useful,
+# GNU micron is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License along
-# with micron. If not, see <http://www.gnu.org/licenses/>. */
+# with GNU micron. If not, see <http://www.gnu.org/licenses/>. */
 
 AC_PREREQ(2.63)
-AC_INIT([micron],[1.3],[gray@gnu.org.ua],[micron],
+AC_INIT([GNU micron],[1.3.90],[gray@gnu.org.ua],[micron],
         [https://www.gnu.org.ua/software/micron])
 AC_CONFIG_SRCDIR([src/micron.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_HEADER([config.h])
 AC_CONFIG_MACRO_DIRS([m4])
-AM_INIT_AUTOMAKE([1.15 foreign tar-ustar silent-rules])
+AM_INIT_AUTOMAKE([1.15 gnu tar-ustar silent-rules])
 # Enable silent rules by default:
 AM_SILENT_RULES([yes])
 # Checks for programs.

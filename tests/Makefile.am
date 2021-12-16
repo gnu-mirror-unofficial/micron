@@ -1,19 +1,19 @@
-## Makefile for the Micron testsuite.
+## Makefile for the GNU micron testsuite.
 ## Process this file with automake to produce Makefile.in.
 ## Copyright (C) 2020-2021 Sergey Poznyakoff
 ##
-## Micron is free software; you can redistribute it and/or modify it
+## GNU micron is free software; you can redistribute it and/or modify it
 ## under the terms of the GNU General Public License as published by the
 ## Free Software Foundation; either version 3 of the License, or (at your
 ## option) any later version.
 ##
-## Micron is distributed in the hope that it will be useful,
+## GNU micron is distributed in the hope that it will be useful,
 ## but WITHOUT ANY WARRANTY; without even the implied warranty of
 ## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ## GNU General Public License for more details.
 ##
 ## You should have received a copy of the GNU General Public License along
-## with micron. If not, see <http://www.gnu.org/licenses/>. */
+## with GNU micron. If not, see <http://www.gnu.org/licenses/>. */
 ## 
 EXTRA_DIST = $(TESTSUITE_AT) testsuite package.m4
 DISTCLEANFILES       = atconfig $(check_SCRIPTS)

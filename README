@@ -1,4 +1,4 @@
-Micron README
+GNU micron README
 See the end of file for copying conditions.
 
 * Overview
@@ -20,7 +20,7 @@ The documentation in various formats is available online at:
  
 * Introduction
 
-Micron is an implementation of the UNIX cron daemon, a program that
+GNU micron is an implementation of the UNIX cron daemon, a program that
 executes periodically various tasks.  It aims to provide several
 enhancements while being mostly backward-compatible with the two most
 widely used cron implementations: Vixie and Dillon crons.
